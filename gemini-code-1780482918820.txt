@@ -1,0 +1,66 @@
+Sen uzman bir Kıdemli Full-Stack Web Oyunu Geliştiricisisin. Senden, aşağıda kuralları verilen "GRID" adlı çok oyunculu (multiplayer), asimetrik kart oyununun matematiksel prototipini geliştirmeni istiyorum.
+
+Oyun, https://render.com üzerinde deploy edilmeye uygun bir mimaride (Node.js/Express + Socket.io backend ve Vanilla JS/HTML/CSS frontend) geliştirilmelidir.
+
+### 🌐 GENEL MİMARİ VE ARAYÜZ GEREKSİNİMLERİ
+1. Çoklu Oyuncu: Oyun odalı veya tek bir genel lobili olabilir. Kullanıcı web sitesine girdiğinde sadece bir "Kullanıcı Adı" yazarak "Oyuna Katıl" butonuna basacaktır.
+2. Basit Arayüz: Karmaşık grafiklere gerek yok. Tamamen işlevsel bir prototip arayüzü olmalı. Oyuncuların ellerindeki kartlar buton şeklinde görünmeli, enerji ve skor tabloları net okunmalıdır.
+3. Senkronizasyon: Socket.io kullanarak tüm oyuncuların enerji durumları, anlık sıra takipleri ve ortadaki ortak alan (Hedef Kartı ve Masadaki Toplam Güç) anlık olarak senkronize edilmelidir.
+
+---
+
+### 📦 OYUN BİLEŞENLERİ VE DESTE YAPISI
+Oyunda 3 Renk Grubu vardır: Kırmızı, Mavi, Sarı.
+
+1. Rol Kartları (6 Adet): Oyun başında sistem, katılan oyunculara rastgele (random) birer Rol dağıtır.
+   - Rol 1 (Kırmızı) | Rol 2 (Kırmızı) | Rol 3 (Mavi) | Rol 4 (Mavi) | Rol 5 (Sarı) | Rol 6 (Sarı)
+2. Hedef Destesi (14 Adet - Kapalı):
+   - Kırmızı Hedef (4 Adet) — Baraj: 10 | Ödül: +10 Skor
+   - Mavi Hedef (4 Adet) — Baraj: 10 | Ödül: +10 Skor
+   - Sarı Hedef (4 Adet) — Baraj: 10 | Ödül: +10 Skor
+   - Sıra Dışı Durum X (1 Adet) — Baraj: 8 | Ödül: Yok / Seçilen bir rakipten -10 Skor siler.
+   - Sıra Dışı Durum Y (1 Adet) — Baraj: 12 (Tur Sınırı Vardır) | Çözen +5 Skor alır, rakipleri -5 Skor kaybeder. Çözülemezse herkes -7 Skor kaybeder.
+3. Merkez Kart Destesi (44 Adet - Kapalı):
+   - 1 Değerli Kart (12 adet - Her renkten 4): Maliyet: 1 Enerji | 1 Güç (Uyumla 2)
+   - 2 Değerli Kart (9 adet - Her renkten 3): Maliyet: 1 Enerji | 2 Güç (Uyumla 3)
+   - 3 Değerli Kart (6 adet - Her renkten 2): Maliyet: 2 Enerji | 3 Güç (Uyumla 4)
+   - 4 Değerli Kart (3 adet - Her renkten 1): Maliyet: 3 Enerji | 4 Güç (Uyumla 5)
+   - İptal (Siyah - 6 adet): Maliyet: 0 (Anlık) / Gelecek Tur: -1 Enerji. Atılan son kartı iptal eder.
+   - Eksiltme (Siyah - 4 adet): Maliyet: 2 Enerji | Ortadaki hedeften 4 güç siler.
+   - Değiştir (Siyah - 2 adet): Maliyet: 3 Enerji | Ortadaki hedefi skor vermeden çöpe atar.
+   - Yenileme (Siyah - 2 adet): Maliyet: 1 Enerji | Elinden 2 kartı çöpe atar.
+
+---
+
+### 👥 ASİMETRİK ROL ÖZELLİKLERİ (BACKEND MANTIĞI)
+Sistem, her oyuncunun rolüne göre şu özel kuralları/tetikleyicileri çalıştırmalıdır:
+- Rol 1: Sırasındaki ilk Siyah Kartın maliyeti 1 azalır (En az 0). Tur sonu kart çekmek için 1 Enerji öder (enerjisi yoksa çekemez). Yenileme kartı oynarsa -1 Skor kaybeder.
+- Rol 2: Masada bir oyuncu "İptal" kartı attığında sistem Rol 2'ye "Müdahale Et" butonu çıkarır. Seçerse, İptal atan oyuncunun elinden rastgele 1 kart çöpe gider ama Rol 2 sonraki tura 2 Enerjiyle başlar. Mavi Hedef çözüldüğünde son vuruşu yapan kendisi değilse -2 Skor kaybeder.
+- Rol 3: Yeni hedef kartı açılmadan hemen önce sistem sadece Rol 3'e "Karta Bak" uyarısı/sorusu çıkarır. 1 Enerji harcayarak gizlice karta bakar, "Beğenmedim" derse kart desteye karışır ve yenisi açılır (Maks 2 kez). Kullanmazsa hedef normal açılır. Bir turda hedefe hiç kart oynamazsa -1 Skor kaybeder (Maks 5 kez).
+- Rol 4: Biri kart çöpe attığında sistem Rol 4'e "1 Enerji Karşılığı Kartı Al" butonu gösterir (Turda maks 1). Alırsa tur sonu kart çekemez. Kırmızı Hedef aktifken uymayan (Mavi/Sarı) kart oynarsa gücü 1 azalır.
+- Rol 5: Bir rakip hedef çözüp skor aldığında, sistem Rol 5'e buton çıkarır. Elinden 1 kart atarsa, o kartın enerji maliyeti kadar rakibin skorunu eksiltir (Maks 3 kez). Kırmızı Hedefte kart oynarsa gücü 1 azalır (Maks 2 kez).
+- Rol 6: Oynadığı 1'lik kartlar masaya bakılmaksızın otomatik +1 Uyum Bonusu alır. Kullanırsa kart maliyetine ek +1 Enerji daha öder. Bir rakip hedefi Kırmızı kartla çözüp kazanırsa anında -2 Skor kaybeder.
+
+---
+
+### 🔄 OYNANIŞ VE DÖNGÜ (GAME LOOP) KURALLARI
+Sıra mantığını ve state yönetimini şu akışa göre kur:
+1. Setup: Dağıtıcı rastgele seçilir. Herkese 5 kart dağıtılır. Sıra dağıtıcının solundaki oyuncudadır. Saat yönünde ilerler. Hedef kartı açılmadan önce Rol 3 kontrolü yapılır.
+2. Tur Başlangıcı: Oyuncunun 3 Enerjisi yenilenir (Eğer aktif "İptal Penaltısı" varsa 2 enerjiyle başlar).
+3. Zorunlu Eylem Kontrolü: Oyuncu en az 1 enerji harcamalıdır. Hamlesi yoksa veya pas geçmek isterse arayüzdeki "Manevra" butonuna basar: 1 Enerji harcar, elinden 1 kartı gizlice çöpe atar ve desteden yeni 1 kart çeker.
+4. Uyum Bonusu: Renkli bir kart oynandığında, rengi hedef kartıyla aynıysa gücü +1 fazla hesaplanır.
+5. Çözüm: Masadaki toplam güç, Hedef Barajına ulaştığında veya geçtiğinde hedef çözülür. Son vuruşu yapan oyuncu hedefi kazanır. Oyuncunun Rol rengi ile Hedef rengi uyumluysa "Temel Skor + 2 Sinerji", farklıysa sadece "Temel Skor" hanesine eklenir. Hedef çözüldüğünde dağıtıcılık pulu ve ilk başlama sırası saat yönünde bir sonraki oyuncuya kayar.
+6. İptal (Nope) Düellosu: "İptal" kartı sıra bağımsız anlık atılabilir. Atan oyuncu sonraki tura -1 enerjiyle başlar. Ancak kendisine İptal atılan oyuncu elinden başka bir İptal ile karşılık verirse (Meşru Müdafaa) enerji cezası almaz. Araya giren üçüncü şahıslar cezayı öder.
+
+---
+
+### 🏆 KAZANMA VE TASFİYE PROTOKOLÜ (KRİTİK ALGORİTMA)
+- Kazanma: Skorunu 50+1 yapan oyuncu partiyi kazanır. Oyun biter, roller sıfırlanır ve yeni parti kurulur.
+- Tasfiye Safhası: Eğer Merkez veya Hedef destesi bir oyuncu 50+1 olmadan biterse backend şu protokolü başlatır:
+  1. Deste bittiği için artık kart çekilemez.
+  2. Sırası gelen oyuncu 1 Enerji harcayarak elinden 1 kartı kapalı şekilde çöpe fırlatmak zorundadır.
+  3. Kimsenin elinde kart kalmayana kadar bu döngü döner.
+  4. Herkesin eli sıfırlandığında, ortadaki aktif hedef kartı (barajı geçilmiş olsa dahi) GEÇERSİZ sayılır ve kimseye puan verilmez.
+  5. Tüm kartlar toplanır, yeniden karılır, herkese tekrar 5'er kart dağıtılır ve oyun aynı skorlarla devam eder.
+
+Bana Render.com üzerinde sorunsuz deploy edebileceğim Express server (server.js), Socket.io entegrasyonu ve HTML/JS/CSS frontend kod yapısını eksiksiz, placeholder bırakmadan adım adım yazar mısın?
