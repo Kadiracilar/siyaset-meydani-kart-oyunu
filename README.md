@@ -1,4 +1,4 @@
-# Siyaset Meydanı - Kart Oyunu Çekirdek Tasarım (GDD)
+# 🏛️ Siyaset Meydanı - Kart Oyunu Çekirdek Tasarım (GDD)
 
 Bu proje, toplumu şekillendiren 3 büyük güç odağının (Devlet, Medya ve Sanat) ulusal gündemi kendi lehlerine çevirmek ve kamuoyunu yönlendirmek için girdiği hızlı, rekabetçi ve absürt savaşı konu alan hibrit (dijital ve fiziksel) bir kart oyunudur.
 
@@ -22,61 +22,90 @@ Oyundaki tüm ana bileşenler sadece **3 Renk Grubu** üzerinden birbirine bağl
 
 ---
 
-## 🔄 2. OYNANIŞ DÖNGÜSÜ VE KURALLAR
+## 📦 2. KUTU İÇERİĞİ VE KART DAĞILIMI (Toplam: 64 Kart)
 
-### A. Kurulum (Setup)
-*   Her oyuncu 1 adet **Arketip** kartı seçer ve önüne koyar.
-*   Her oyuncuya Argüman destesinden **5 kart** dağıtılır. (Masaüstü versiyonda en az 1 PR/Defuse kartı olması garanti edilir).
-*   Her oyuncu oyuna **0 Puan** ile başlar.
-*   Ortaya Gündem destesinden en üstteki **1 adet Gündem Kartı** açılır.
+Oyun, hem dijital veritabanında hem de fiziksel kutuda toplam **64 kart** ile oynanır ve iki ana desteye ayrılır:
 
-### B. Oyuncu Turu (Turn Steps)
-1.  **Enerji Yenileme:** Oyuncunun **3 Enerjisi** yenilenir.
-2.  **Kart Oynama Aşaması:** Oyuncu elindeki kartları Enerji bütçesine göre oynar.
-    *   Kartları ortadaki aktif Gündem kartının üzerine oynayarak oradaki gücü artırabilir.
-    *   Renk uyumu varsa kartın gücü $+1$ artar.
-3.  **Çözüm Kontrolü:** Eğer masadaki Gündem kartının altındaki toplam güç, o kartın **Barajına (CE)** ulaşırsa kart çözülür. Son vuruşu yapan oyuncu kartı kazanır. Kart çöpe gider, anında desteden **yeni bir Gündem** açılır. (Oyuncunun enerjisi kaldıysa yeni karta da oynayabilir).
-4.  **Tur Sonu ve Kart Çekme:** Oyuncu "Tur Bitti" der ve desteden **1 kart çeker**. (Bu sırada elinde her an bir reaksiyon/savunma kartı tutabilir).
+### A. Gündem Destesi (14 Adet Kart)
+Ortak masada sırayla açılan hedefleri ve krizleri içerir:
+*   🔴 **Siyasi Gündem (4 Adet):** Baraj: 10 AG | Ödül: +10 Puan
+*   🔵 **Toplumsal Gündem (4 Adet):** Baraj: 10 AG | Ödül: +10 Puan
+*   🟡 **Kültürel Gündem (4 Adet):** Baraj: 10 AG | Ödül: +10 Puan
+*   ⚠️ **Kriz: Çamur At İzi Kalsın (1 Adet):** Baraj: 8 AG | Ödül: Yok. Çözen kişi kendi puan kazanmaz, seçtiği bir rakipten **-10 Puan** siler.
+*   🚨 **Kriz: Çiçek Sulama İfşası (1 Adet):** Baraj: 12 AG (Tur Sınırı) | Ödül/Ceza: Açıldığı turun sonuna kadar çözülmelidir. Çözen oyuncu **+5 Puan** alır, rakipleri **-5 Puan** kaybeder. Çözülemezse tüm oyuncular **-7 Puan** kaybeder.
 
-### C. Reaksiyon Sistemi (Masaüstü Uyumlu)
-*   `[⚫ Siyah] Nope / Sabotaj` kartları kendi sıranızda oynanmaz, elde gizli tutulur.
-*   Rakip kendi sırasındayken bir hamle yaptığında, elinizden bu kartı atarak rakibin hamlesini **anında iptal edebilir / bozabilirsiniz.**
+### B. Merkez Oyuncu Destesi (44 Adet Kart)
+Oyuncuların elinde tuttuğu, oynamak için Enerji harcadığı kartlardır. Yazısız/dilsiz (ikon/renk odaklı) tasarlanmıştır:
+*   **1'lik Argüman Kartı (12 Adet - Her Renkten 4'er):** Maliyet: 1 Enerji | Güç: 1 AG (Renk uyumuyla 2 AG)
+*   **2'lik Argüman Kartı (9 Adet - Her Renkten 3'er):** Maliyet: 1 Enerji | Güç: 2 AG (Renk uyumuyla 3 AG)
+*   **3'lük Argüman Kartı (6 Adet - Her Renkten 2'şer):** Maliyet: 2 Enerji | Güç: 3 AG (Renk uyumuyla 4 AG)
+*   **4'lük Argüman Kartı (3 Adet - Her Renkten 1'er):** Maliyet: 3 Enerji | Güç: 4 AG (Renk uyumuyla 5 AG)
+*   🚫 **Nope (İptal - Siyah Kart - 6 Adet):** Maliyet: 0 (Anlık/Reaktif) / Gelecek Tur Cezası: -1 Enerji. Atılan son kartı iptal eder.
+*   📉 **Sabotaj (Siyah Kart - 4 Adet):** Maliyet: 2 Enerji | Ortadaki gündemden 4 güç siler.
+*   🔄 **Gündem Değiştir (Siyah Kart - 2 Adet):** Maliyet: 3 Enerji | Mevcut gündemi puan vermeden çöpe atar.
+*   💳 **Fonlama (Siyah Kart - 2 Adet):** Maliyet: 1 Enerji | Elindeki 2 kartı çöpe (ıskartaya) fırlatır.
 
----
-
-## 🏆 3. PUANLAMA VE KAZANMA KOŞULLARI
-
-### A. 0'dan 50+1'e Yarış
-*   Oyunda bir "terazi/tahterevalli" yoktur. Her oyuncu oyuna **0 Puan** ile başlar.
-*   Kazanılan puanlar doğrudan oyuncuların kendi kişisel hanesine eklenir ve birikir (Skorlar kalıcıdır).
-*   Kişisel skorunu **50+1 Kamuoyu Puanına** (Salt Çoğunluk) ilk ulaştıran oyuncu oyunu anında kazanır.
-*   Gündem destesi tamamen bittiğinde kimin puanı en yüksekse o kazanır.
-
-### B. Arketip Uyumu (Sinerji Bonusu)
-*   **Zıt Renk Kazanımı:** Kazandığın Gündem rengi karakterinin rengiyle **aynı değilse** ➔ Gündemin **Temel Puanını** alırsın.
-*   **Uyumlu Renk Kazanımı:** Kazandığın Gündem rengi karakterinin rengiyle **aynıysa** ➔ Gündemin **Temel Puanı + 2 Ekstra Sinerji Puanı** alırsın! (Örn: Kültürel karaktersiniz ve kültürel gündem çözdünüz, $+2$ bonus kazanırsınız).
+*Not: Geriye kalan 6 kart, asimetrik Karakter kartlarıdır.*
 
 ---
 
-## 📈 4. YAZISIZ (DİLSİZ) KART TASARIMI
+## 👥 3. ASİMETRİK KARAKTER YETENEKLERİ (6 Karakter)
 
-Baskı maliyetini düşürmek ve dil engelini kaldırmak için kartlarda uzun yazılar bulunmaz:
-*   **Argüman Kartları:** Sadece kocaman bir rakam ve renk (🔴, 🔵, 🟡) içerir.
-*   **Aksiyon (Siyah ⚫) Kartları:**
-    *   🚫 **Nope (İptal):** Rakibin son hamlesini anında bloke eder.
-    *   📉 **Sabotaj:** Ortadaki gündemin toplam gücünü düşürür.
-    *   🔄 **Gündem Değiştir:** Mevcut gündemi çöpe atıp desteden yeni gündem açar.
+Oyuncular oyun başında aşağıdaki 6 karakterden birini seçerek asimetrik avantajlar ve dezavantajlar kazanırlar:
+
+### 🔴 Siyasi Karakterler
+*   **Bürokrat:** 
+    *   *Avantaj:* Turunda 1 Enerji harcayarak masadaki aktif Gündem kartının rengini o tur için kalıcı olarak değiştirebilir. 
+    *   *Dezavantaj:* Bu avantajı kullanmak "Zorunlu en az 1 enerji harcama" şartını karşılamaz; turu bitirebilmek için elinden en az 1 enerji değerinde başka bir kart daha oynamalıdır. Tur sonunda kart çekebilmek için 1 Enerji ödemek zorundadır (Enerjisi kalmadıysa kart çekemez). "Fonlama" kartını kullandığında hanesinden **-1 Puan** silinir.
+*   **Kolluk Kuvveti:**
+    *   *Avantaj:* Masada herhangi bir oyuncu 🚫 Nope kartı attığında müdahale etmeyi seçebilir. Müdahale ederse, Nope atan oyuncunun elinden rastgele 1 kartı çöpe attırır.
+    *   *Dezavantaj:* Bu müdahaleyi gerçekleştirirse kendi sonraki turuna 1 Enerji eksik (2 Enerji ile) başlar. Ayrıca, 🔵 Mavi (Toplumsal) gündem çözüldüğünde son vuruşu yapan kendisi değilse hanesinden **-2 Puan** silinir.
+
+### 🔵 Toplumsal Karakterler
+*   **Anchorman:**
+    *   *Avantaj:* Yeni bir gündem kartı açılmadan önce 1 Enerji harcayarak destenin en üstündeki karta gizlice bakabilir. Beğenmezse desteyi karıştırıp yenisini çektirebilir (Maksimum 2 kez). Anchorman avantajı kullanmak istemezse gündem kartı normal açılır (Dijitalde onay ekranı gelir; masaüstünde takibi oyuncu kendisi yapar).
+    *   *Dezavantaj:* Bir turda gündeme hiç kart oynamazsa hanesinden **-1 Puan** silinir (Bu ceza bir oyun partisi boyunca en fazla 5 kez yaşanabilir).
+*   **Gazeteci:**
+    *   *Avantaj:* Masada herhangi biri kart çöpe attığında (oynayarak veya atarak), 1 Enerji harcayarak o kartı kendi eline alabilir (Tur başına maksimum 1 kez).
+    *   *Dezavantaj:* Bu hakkı kullandığı tur, tur sonunda kart çekemez. Ek olarak, 🔴 Kırmızı (Siyasi) gündem aktifken renk uyumu olmayan (Mavi veya Sarı) bir kart oynarsa o kartın gücü 1 azalır.
+
+### 🟡 Kültürel Karakterler
+*   **Aktivist Sanatçı:**
+    *   *Avantaj:* Bir rakip gündem çözüp puan aldığında, elinden 1 kart atarak attığı kartın enerji maliyeti kadar o rakibin kazandığı puanı bloke edebilir (Oyun partisi boyunca maksimum 3 kez kullanılabilir).
+    *   *Dezavantaj:* 🔴 Kırmızı (Siyasi) gündem aktifken herhangi bir kart oynarsa o kartın gücü 1 azalır (Bu durum bir parti boyunca en fazla 2 kez yaşanabilir, "Gözaltı Sınırı").
+*   **Popüler Influencer:**
+    *   *Avantaj:* Oynadığı 1'lik argüman kartları masaya bakılmaksızın her zaman +1 Uyum Bonusu alır (2 güç üretir).
+    *   *Dezavantaj:* Bu avantajı kullanırsa kartın kendi maliyetine ek olarak +1 Enerji daha öder. Ayrıca, bir rakip gündemi 🔴 Kırmızı kartla çözüp kazanırsa, sessiz kaldığı için anında **-2 Puan** kaybeder.
 
 ---
 
-## ⚠️ 5. KİLİTLEYİCİ KRİZ DİNAMİKLERİ
+## 🔄 4. OYNANIŞ VE PARTİ KURALLARI
 
-Gündem destesinden bir Kriz kartı çıktığında normal tartışmalar durur. Bu kriz çözülene veya süresi dolana kadar yeni bir normal gündem kartı açılamaz:
+### A. Kurulum ve Başlangıç
+1.  **Deste Hazırlığı:** Merkez Oyuncu Destesi ve Gündem Destesi kendi içlerinde karıştırılır ve masaya kapalı olarak yerleştirilir.
+2.  **Karakter Seçimi:** Oyuncular istedikleri sırada Karakter kartlarından birini seçer ve önüne açık koyar. Sıra anlaşmazlığını oyuncular kendi çözer; dijital versiyonda karakterler tamamen rastgele (random) dağıtılır.
+3.  **Dağıtıcı (Dealer) Seçimi:** Oyun başında bir dağıtıcı belirlenir. Dağıtıcı kartları saat yönünde karıştırıp dağıtır ve her oyuncuya gizlice **5 kart** verir. Oyuna dağıtıcının solundaki oyuncu başlar.
+4.  **Sıra ve Dağıtıcı Değişimi:** Ortadaki Gündem kartı her çözüldüğünde, dağıtıcılık rolü (ve dolayısıyla yeni gündeme ilk başlama sırası) saat yönünde bir sonraki oyuncuya geçer. Desteler tamamen bitmediği sürece yeniden kart dağıtımı yapılmaz, oyuncular ellerindeki kartlarla oynamaya devam eder.
 
-### 1. "Çamur At İzi Kalsın" (Eşik: 8 AG)
-*   **Çözüm Ödülü:** Çözen kişi kendi puan kazanmaz. Masadaki **istediği herhangi bir rakibin puanını doğrudan -10 puan düşürür.** (Lideri aşağı çekme mekaniği).
+### B. Oynanış Kuralları
+1.  **Enerji:** Her tur oyuncunun 3 Enerjisi yenilenir.
+2.  **Zorunlu Eylem:** Oyuncu kendi turunda en az 1 enerji harcamak zorundadır. Elinde oynayabileceği bir kart yoksa veya oynamak istemezse **"Gündemi Saptırma (Manevra)"** yapar: 1 Enerji harcar, elinden 1 kartı gizlice çöpe atar ve desteden yeni 1 kart çeker.
+3.  **Renk Uyumu Bonusu:** Oynanan kartın rengi ortadaki Gündemle aynıysa gücü +1 artar.
+4.  **Gündem Çözümü ve Sinerji:** Gündem barajına ulaşıldığında son vuruşu yapan gündemi kazanır. Karakter rengi ve Gündem rengi uyumluysa **Temel Puan + 2 Sinerji Puanı**, farklıysa sadece **Temel Puan** alınır.
+5.  **Nope (İptal) Düellosu:** 🚫 Nope kartı reaktif olarak anlık atılır. Nope atan oyuncu bir sonraki turuna 1 eksik enerjiyle (2 enerji) başlar. Kendisine Nope atılan oyuncu elinden başka bir Nope ile kendini savunursa bu enerji cezasını almaz. Nope zincirine araya girerek sonradan dahil olan (üçüncü şahıs) oyuncular cezayı öder.
 
-### 2. "Çiçek Sulama İfşası" (Eşik: 12 AG - Tur Sınırı)
-*   Bu kriz kartı açıldığı turun sonuna kadar çözülmek zorundadır.
-*   **Çözülürse:** Çözen oyuncu absürt bir savunmayla sıyrıldığı için **+5 Puan** alır, rakipleri ise bu savunmaya maruz kaldığı için **-5 Puan** kaybeder.
-*   **Çözülemezse:** Skandalı tüm siyasiler görmezden geldiği için **bütün oyuncular anında -7 Puan kaybeder.**
+---
+
+## 🏆 5. KAZANMA VE DESTE BİTME (TASFİYE) KURALLARI
+
+### A. Kesin Kazanma Koşulu
+*   Skorunu **50+1 Kamuoyu Puanına** ulaştıran oyuncu oyunun o partisini kesin olarak kazanmış olur.
+*   50+1 sağlandığında o parti biter, tüm karakter kartları toplanıp yeniden dağıtılarak yeni parti başlatılır.
+
+### B. Deste Bitme ve Tasfiye Protokolü
+Eğer Merkez Oyuncu Destesi veya Gündem Destesi bir oyuncu 50+1 puana ulaşmadan önce tamamen biterse şu adımlar sırasıyla uygulanır:
+1.  Oyun durmaz; **"Tasfiye Safhası"** başlar.
+2.  Sırası gelen oyuncular sırayla 1 Enerji harcayarak elinden herhangi 1 kartı kapalı şekilde çöpe fırlatır (Deste bittiği için yeni kart çekilmez).
+3.  Masadaki hiçbir oyuncunun elinde kart kalmayana kadar bu el boşaltma döngüsü saat yönünde devam eder.
+4.  Herkesin eli tamamen sıfırlandığında, ortadaki aktif gündem kartı (tasfiye öncesinde veya tasfiye sırasında baraj puanına ulaşılmış ya da baraj geçilmiş olsa dahi) geçersiz sayılır ve hiç kimseye puan verilmez. Aktif gündem kartı, altındaki tüm argümanlarla birlikte doğrudan ıskartaya atılır.
+5.  O anki aktif dağıtıcı yerdeki tüm çöpleri ve kartları toplar, yeniden karıp desteleri kapalı olarak masaya koyar. Herkese yeniden 5 kart dağıtır ve oyun kaldığı yerden, aynı skorlarla devam eder.
