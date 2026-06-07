@@ -1,0 +1,150 @@
+======================================================================
+         GRID / SİYASET MEYDANI — RESMİ PROJE TASARIM DÖKÜMANI
+======================================================================
+Sürüm: V6.1 (Nihai — Güncellenmiş Ton)
+Yazar / Tasarımcı: Kadir
+Mimari: Node.js (Express) + Socket.io Real-Time Engine + Vanilla JS/CSS Frontend
+Barındırma Hedefi: Render.com
+
+Bu döküman, "GRID" (Masaüstü kod adı: Siyaset Meydanı) çok oyunculu kart oyununun 
+hem tematik/konseptli versiyonunu hem de soyut/matematiksel motor kurallarını 
+barındıran tek ve nihai otorite belgesidir. Kod tabanı bu belgedeki kurallara 
+ve mantık hiyerarşisine göre inşa edilmeli ve denetlenmelidir.
+
+──────────────────────────────────────────────────────────────────────
+🎯 BÖLÜM 1: KONSEPTLİ SÜRÜM (Siyaset Meydanı / Viral Propaganda)
+──────────────────────────────────────────────────────────────────────
+
+Oyun, tamamen günümüz sosyal medya kültüründen, televizyon tartışmalarından, 
+viral internet geyiklerinden ve caps/meme akımlarından beslenen; oyuncuların 
+toplumu kendi söylemleriyle manipüle etmeye çalışan popüler figürleri (politikacı, 
+troll, gazeteci, influencer vb.) canlandırdığı mizahi ve ironik bir propaganda 
+savaşıdır. Masanın ortasındaki hedefler, o an ülkenin veya internetin gündemine 
+düşen absürt iddiaları, viral kavgaları ve komik sosyal medya tartışmalarını 
+temsil eder. Oyuncular ellerindeki kamuoyu yaratma ve manipülasyon güçlerini 
+kullanarak bu gündemleri kendi lehlerine çözüp popülarite (skor) kazanmaya çalışırlar.
+
+👥 Karakter Archetype'ları ve Asimetrik Yetenekler:
+----------------------------------------------------------------------
+* 🔴 ROL 1 (Popülist Lider): 
+    Siyah manipülasyon kartlarını çok iyi kullanır; kendi sırasındaki ilk siyah 
+    kartı 1 enerji indirimli oynar (En az 0). Ancak tur sonunda kitle desteğini 
+    korumak için rutin kart çekerken 1 Enerji ödemek zorundadır; enerjisi yoksa 
+    kart çekemez. "REFRESH" (Fonlama) kartı oynarsa hanesinden -1 Skor silinir.
+
+* 🔴 ROL 2 (Araştırmacı Gazeteci): 
+    Masadaki dezenformasyonu ve yalanlamaları kontrol eder. Birisi "CANCEL" 
+    (Nope) kartı fırlattığında araya girerek onu mühürleme/müdahale etme hakkı 
+    vardır. Müdahale ederse, CANCEL atan oyuncunun elinden rastgele 1 kart çöpe 
+    gider; Rol 2 ise sonraki turuna +2 Bonus Enerji (Toplam 5 enerji) ile başlar. 
+    Mavi (Toplumsal) gündem çözüldüğünde son vuruşu yapan kendisi değilse -2 Skor kaybeder.
+
+* 🔵 ROL 3 (Anchorman / Medya Patronu): 
+    Yeni gündem maddesi (hedef kartı) masaya açılmadan hemen önce devreye girer. 
+    1 Enerji harcayarak destenin en üstündeki gizli karta bakabilir ("look"). 
+    Beğenmezse "Change" hakkını kullanıp hedef destesini karıştırarak yeni kart 
+    açtırabilir (Bir turda en fazla 2 kez kullanabilir). Eğer bir tur boyunca 
+    ortadaki gündeme hiç kart oynamazsa pasif kaldığı için -1 Skor kaybeder (Maks 5 kez).
+
+* 🔵 ROL 4 (Troll Başı / Hesap Sahibi): 
+    Çöplüğe düşen sızıntıları ve eski tweetleri toplar. Herhangi bir kart "Iskarta Havuzu"na 
+    (Çöpe) düştüğü an (Manevra yapıldığında veya siyah kart oynandığında) 1 Enerji vererek 
+    o kartı kendi eline alabilir (Turda en fazla 1 kez). Gündem havuzundaki aktif 
+    kartları masadan çalamaz. Tur sonu rutin kart çekimi yapamaz. Kırmızı (Siyasi) 
+    gündem aktifken uymayan renkli kart oynarsa gücü 1 azalır.
+
+* 🟡 ROL 5 (Aktivist Sanatçı / Muhalif Blok): 
+    Bir rakip gündem çözüp popülarite (skor) kazandığı an anlık reaksiyon verir. 
+    Elinden fırlatacağı bir kartın enerji maliyeti kadar, hedefi çözen oyuncunun 
+    skorunu anında baltalayarak eksiltir (Maksimum 3 kullanım). Kırmızı (Siyasi) 
+    gündemde güç kartı oynarsa gücü 1 azalır (Maks 2 kez).
+
+* 🟡 ROL 6 (Popüler Influencer / Kaos Teorisyeni): 
+    Toplumdaki en küçük dedikoduları büyütebilir. Oynadığı 1 değerindeki kartlar 
+    masaya bakılmaksızın otomatik +1 Uyum Bonusu (Toplam 2 güç) alır; ancak bu 
+    kartı parlatmak ona +1 fazla enerjiye (Maliyet: 2) mal olur. Bir rakip gündemi 
+    🔴 Kırmızı (Siyasi) kartla çözüp kazanırsa sessiz kaldığı için anında -2 Skor kaybeder.
+
+
+──────────────────────────────────────────────────────────────────────
+🎲 BÖLÜM 2: KONSEPTSİZ SÜRÜM (Saf Mekanik ve State Machine Kuralları)
+──────────────────────────────────────────────────────────────────────
+
+Bu sürüm, oyunun tamamen matematiksel, soyut ve her türlü temaya uyarlanabilir 
+saf kod mimarisidir. Yapay zeka tüm veri yapılarını bu kurallara göre kurgulamalıdır.
+
+📦 1. Havuz Yönetimi ve Kart Akışı:
+----------------------------------------------------------------------
+* Gündem Havuzu (agendaPile): Oyuncuların aktif hedefi çözmek için masaya oynadığı 
+    renkli POWER kartları burada üst üste birikir. Bu kartlar hedef çözülene veya 
+    bir aksiyon kartıyla imha edilene kadar KESİNLİKLE Iskarta Havuzuna gidemez.
+* Iskarta Havuzu (discardPile): Siyah Aksiyon kartları (CANCEL, REDUCE, REFRESH, 
+    CHANGE_TARGET), oyuncuların "Manevra" ile elden feda ettiği gizli kartlar ve 
+    Tasfiye safhasında atılan kartlar ANINDA buraya push edilir.
+
+🎴 2. Deste Yapısı ve Kart Değerleri:
+----------------------------------------------------------------------
+* Hedef Destesi (14 Kart): Kırmızı (4), Mavi (4), Sarı (4) [Eşik: 10, Ödül: 10]. 
+    SPECIAL_X (1 adet, Eşik: 8, Ödül yok, rastgele rakipten 10 skor çalar). 
+    SPECIAL_Y (1 adet, Eşik: 12, Tur limitli global kriz. Çözen +5, diğerleri -5. 
+    Tur limiti biterse istisnasız HERKESTEN -7 skor silinir).
+* Merkez Oyuncu Destesi (44 Kart): 1, 2, 3, 4 Değerli renkli güç kartları. 
+    CANCEL (6 adet, anlık iptal), REDUCE (4 adet, gündemden son kartı siler), 
+    CHANGE_TARGET (2 adet, hedefi boşa çıkarır), REFRESH (2 adet, el yeniler).
+
+🔄 3. Oynanış Döngüsü ve Durum Geçişleri:
+----------------------------------------------------------------------
+* Zorunlu Eylem (Forced Action): Sırası gelen oyuncu pas geçemez. En az 1 enerji 
+    harcamak zorundadır. Oynayacak kartı veya enerjisi yoksa ya da elini saklamak 
+    istiyorsa "Manevra" yapar: 1 enerji harcar, elinden 1 kartı gizli çöpe atar ve 
+    desteden yeni 1 kart çeker. Oyuncu hareketsiz kalırsa sistem "checkForcedManeuver" 
+    ile bu işlemi otomatik tetikleyip turu atlatmalıdır.
+* Uyum Bonusu (Conformity): Oynanan renkli kartın rengi aktif hedef kartıyla 
+    aynıysa gücü otomatik olarak backend'de +1 hesaplanır (Örn: Mavi hedefe Mavi 2'lik 
+    atılırsa 3 güç üretir).
+* Hedef Çözümü: Masadaki toplam güç, Hedef Barajına ulaştığı veya geçtiği an 
+    hedef çözülür. Son kartı atan oyuncu kazanır. Kazanan oyuncunun Rol rengi ile 
+    Hedef rengi uyumluysa Temel Skor + 2 Sinerji Bonusu, farklıysa sadece Temel Skor yazılır. 
+    Hedef çözülünce masadaki tüm kartlar çöpe gider, dağıtıcılık pulu saat yönünde kayar ve yeni hedef açılır.
+* İptal (Cancel) Düellosu: CANCEL kartı sıra bağımsız anlık fırlatılır. Atan oyuncu 
+    sonraki tura -1 enerji penaltısıyla başlar. Kendisine CANCEL atılan oyuncu elinden 
+    başka bir CANCEL ile karşılık verirse (Meşru Müdafaa) penaltı almaz, araya giren 
+    üçüncü şahıslar penaltıyı öder.
+* Tasfiye Protokolü (EvacuationMode): Herhangi bir deste sıfırlandığında ve 51 puana 
+    ulaşan yoksa oyun kilitlenmez, acil tasfiyeye geçer. Kart çekimi durur. Sırası gelen 
+    oyuncu 1 enerji harcayarak elinden 1 kartı kapalı çöpe fırlatır. Herkesin eli tamamen 
+    sıfırlandığında ortadaki hedef (barajı geçilmiş olsa dahi) PUANSIZ/GEÇERSİZ sayılarak 
+    imha edilir. Çöpler toplanır, karılır, herkese yeniden 5'er kart dağıtılarak oyun 
+    kaldığı yerden devam eder.
+
+
+──────────────────────────────────────────────────────────────────────
+🔍 BÖLÜM 3: YAPAY ZEKAYA KOD DENETİMİ YAPTIRMA PROMPTU
+──────────────────────────────────────────────────────────────────────
+
+[Mevcut server.js ve client.js kodlarını bu mesaja ekledikten sonra yapay zekaya verilecek komut:]
+
+Sen GRID oyununun resmi Baş Denetleyicisisin (Senior QA Automation). Elimizdeki çalışan 
+server.js ve client.js kodlerini, oyunun yukarıda resmi kuralları verilen "Project Design Document" 
+filtresinden geçirerek satır satır denetlemeni istiyorum.
+
+Aşağıdaki 5 kritik entegrasyon noktasını koddaki fonksiyon isimleriyle eşleştirerek kontrol et:
+
+1. [HAVUZ AYRIMI]: triggerRole4Reaction() fonksiyonu, masadaki aktif "arena/agendaPile" 
+   kartlarını bloke ediyor mu? Rol 4'ün masadaki aktif kartları çalmasını engelleyip 
+   sadece gerçek discardPile kartlarına tetiklenmesini garanti altına alıyor mu?
+2. [TAHLİYE KİLİDİ]: evacuationMode = true olduğunda, client.js üzerindeki renderHand() 
+   fonksiyonu sırası gelen oyuncunun kartlarını seçilebilir yapıp socket.emit("evacuationDiscard") 
+   olayını kilitlenmeden tetikliyor mu?
+3. [ROL 6 MATEMATİĞİ]: calculatePower() fonksiyonunda ROLE_6 kontrolü var mı? 1 değerli 
+   kart atıldığında backend hem cost'u +1 enerji artırıp hem de gücü +1 yükseltiyor mu?
+4. [ZORUNLU MANEVRA]: checkForcedManeuver socket dinleyicisi, oyuncunun hamle yapamadığı 
+   durumlarda kilitlenmeyi önlemek için client tarafındaki sayaç veya otomatik tetikleyicilerle 
+   senkronize çalışıyor mu?
+5. [REAKSİYON DÖNGÜSÜ]: startReaction() ile tetiklenen 10 saniyelik sayaçlar bittiğinde, 
+   resolveReaction('pass') fonksiyonu oyunun turnEngine motorunu bir sonraki oyuncuya 
+   sorunsuz aktarıyor mu?
+
+Kod tabanını tarayarak bu kurallarla çelişen veya eksik kalan tüm mantık hatalarını temizle, 
+production-level çalışan nihai güncellemeyi tamamla.
+======================================================================

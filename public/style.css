@@ -1,0 +1,160 @@
+*{
+  box-sizing:border-box;
+  margin:0;
+  padding:0;
+}
+
+body{
+  background:#111;
+  color:white;
+  font-family:Arial, Helvetica, sans-serif;
+  overflow:hidden;
+}
+
+.hidden{
+  display:none !important;
+}
+
+/* login */
+#loginScreen{
+  width:100vw;
+  height:100vh;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+}
+
+.loginCard{
+  width:300px;
+  padding:25px;
+  background:#222;
+  border-radius:12px;
+  text-align:center;
+}
+
+.loginCard input{
+  width:100%;
+  margin-top:15px;
+  padding:10px;
+}
+
+.loginCard button{
+  width:100%;
+  margin-top:15px;
+  padding:10px;
+}
+
+/* hud */
+#hud{
+  height:60px;
+  background:#1e1e1e;
+  border-bottom:2px solid #444;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  font-size:24px;
+  font-weight:bold;
+  color:#00ff90;
+}
+
+/* masa */
+#tableContainer{
+  height:65vh;
+  position:relative;
+}
+
+#virtualTable{
+  position:absolute;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  width:600px;
+  height:600px;
+  border-radius:50%;
+  background:#183318;
+  border:6px solid #7a5520;
+}
+
+/* hedef */
+#targetArea{
+  position:absolute;
+  top:30px;
+  left:50%;
+  transform:translateX(-50%);
+  text-align:center;
+}
+
+/* gündem havuzu */
+#agendaArea{
+  position:absolute;
+  top:180px;
+  left:50%;
+  transform:translateX(-50%);
+  width:500px;
+}
+
+#agendaPile{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  justify-content:center;
+}
+
+/* ıskarta */
+#discardArea{
+  position:absolute;
+  bottom:40px;
+  left:50%;
+  transform:translateX(-50%);
+}
+
+#discardPile{
+  width:80px;
+  height:110px;
+  background:#222;
+  border:2px solid #888;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  font-size:26px;
+}
+
+/* oyun halkası */
+#playerRing{
+  position:absolute;
+  width:100%;
+  height:100%;
+}
+
+/* oyuncu kutusu */
+.playerBox{
+  position:absolute;
+  width:170px;
+  background:#202020;
+  border:2px solid #444;
+  border-radius:12px;
+  padding:8px;
+  text-align:center;
+  transition:all .3s;
+}
+
+/* aktif oyuncu glow */
+.activeTurn{
+  border-color:#00ff66;
+  animation:turnPulse 1s infinite;
+}
+
+@keyframes turnPulse{
+  0%{ box-shadow: 0 0 5px #00ff66; }
+  50%{ box-shadow: 0 0 30px #00ff66; }
+  100%{ box-shadow: 0 0 5px #00ff66; }
+}
+
+/* el alanı */
+#handArea{
+  position:absolute;
+  bottom:0;
+  width:100%;
+  height:220px;
+  background:#1a1a1a;
+  border-top:2px solid #4

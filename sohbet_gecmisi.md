@@ -73,3 +73,31 @@ Deste bittiğinde oyunun kilitlenmesini engellemek için "Tasfiye Safhası" ekle
 *   Tüm eller boşaldığında aktif gündem geçersiz sayılır, puan verilmez.
 *   Dağıtıcı tüm kartları toplar, karıştırır, yeniden 5'er kart dağıtır ve oyun aynı skorlarla devam eder.
 
+---
+
+## 📅 Tasarım ve Entegrasyon Oturumu Tarihi: 7 Haziran 2026
+
+### 🛠️ 1. Kod Denetimi, Kural Entegrasyonu ve Bug Düzeltmeleri
+Bu oturumda, oyuna yüklenen resmi tasarım dökümanı (GDD) referans alınarak backend (`server.js`) ve frontend (`client.js`) kodlarında kapsamlı bir self-check ve hata giderme yapılmıştır:
+
+*   **Havuz Ayrımı (agendaPile vs discardPile) ve Rol 4 Reaksiyonu:**
+    - `triggerRole4Reaction` fonksiyonunun sadece gerçek `discardPile` kartlarına ve manevra ile atılan kartlara tetiklenmesi güvenceye alınmıştır. Masadaki aktif kartların kural dışı çalınması engellenmiştir.
+*   **Tasfiye Kilidinin Giderilmesi (Evacuation Lock):**
+    - `evacuationMode = true` olduğunda 0 enerjisi kalan oyuncuların kart atamaması ve oyunun kilitlenmesi sorunu giderildi. Oyuncunun enerjisine bakılmaksızın elindeki kartları `evacuationDiscard` ile çöpe fırlatarak eli sıfırlayabilmesi sağlandı.
+*   **Rol 6 (Popüler Influencer) Matematik Entegrasyonu:**
+    - `calculatePower` fonksiyonunda Rol 6 kontrolü yapılarak; oynanan 1 değerli kartların otomatik +1 Uyum Bonusu alması, ancak maliyetine +1 fazla enerji (toplam 2) ödemesi kuralı motor seviyesinde bağlandı.
+*   **Zorunlu Manevra (Forced Maneuver) & Sıra Geçişleri:**
+    - Oyuncunun pasif kaldığı veya hamle yapamadığı durumlarda kilitlenmeyi önleyen zorunlu manevra mekanizmaları ve 10 saniyelik reaksiyon sayaçları (`resolveReaction('pass')`) sonrasında turn engine akışı stabil hale getirildi.
+*   **Puanlama ve Kriz Kuralları:**
+    - Oyuncu puanlarının 0'ın altına düşmesi engellendi (`Math.max(0, ...)`).
+    - `SPECIAL_X` (Çamur At İzi Kalsın) çözüldüğünde çözenin puan almaması, sadece seçilen bir rakipten 10 puan silmesi sağlandı.
+    - Sinerji puanlaması ve renk eşleşmelerindeki puan/ceza kuralları GDD ile %100 uyumlu hale getirildi.
+
+### 🎨 2. Arayüz (UI/UX) Hizalama ve Geliştirmeler
+*   **Kart Oynanabilirlik Görsel Efektleri:**
+    - Kartların playable (aktif eldeki oynanabilir kartlar) ve unplayable (yetersiz enerji veya sıra dışı durumlar) durumları için CSS parıltıları ve görünürlük sınıfları eklendi.
+*   **Ortalama Düzenlemeleri:**
+    - Oyuncunun elindeki kartların listelendiği `#handCards` alanı ekranın tam ortasına hizalandı.
+    - "ELİNİZDEKİ KARTLAR" başlığı (`.hand-header`) yatayda ortalandı. Enerji göstergesi (`⚡ 3`) ise tasarım bütünlüğünün korunması adına sağ köşede sabitlendi.
+
+
