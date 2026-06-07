@@ -26,6 +26,7 @@ let gameState = {
     agendaPile: [],
     hudMessage: "Oyuncular bekleniyor...",
     evacuationMode: false,
+    evacuationTriggerCause: null,
     evacuationOrder: [],
     evacuationIndex: 0,
     specialYTurnLimit: null,
@@ -35,7 +36,9 @@ let gameState = {
     role5UsesTotal: 0,
     role5RedPenaltyCount: 0,
     role3NoPenaltyCount: 0,
-    activeReaction: null
+    activeReaction: null,
+    lastPlayedCard: null,
+    scoreboard: []
 };
 
 // ─────────────────────────────────────────────
@@ -70,7 +73,7 @@ function createTargetDeck() {
     for (let i = 0; i < 4; i++) deck.push({ type: "TARGET", color: "BLUE",   threshold: 10, reward: 10, turnLimit: 4 });
     for (let i = 0; i < 4; i++) deck.push({ type: "TARGET", color: "YELLOW", threshold: 10, reward: 10, turnLimit: 4 });
     deck.push({ type: "SPECIAL_X", threshold: 8,  turnLimit: 4 });
-    deck.push({ type: "SPECIAL_Y", threshold: 12, turnLimit: 3 });
+    deck.push({ type: "SPECIAL_Y", threshold: 10, turnLimit: 2 });
     return shuffle(deck);
 }
 
@@ -102,7 +105,8 @@ function createPlayer(socketId, name) {
         active: true,
         actedThisTurn: false,
         usedBlackDiscount: false,
-        playedToAgendaThisTurn: false
+        playedToAgendaThisTurn: false,
+        role4DrawnThisRound: false
     };
 }
 
@@ -110,6 +114,7 @@ function createPlayer(socketId, name) {
 //  CARD DRAW
 // ─────────────────────────────────────────────
 function drawCard(player) {
+    if (gameState.evacuationMode) return null;
     if (gameState.centerDeck.length === 0) {
         checkDeckExhaustion();
         return null;
@@ -158,7 +163,8 @@ function getPublicState() {
             score: p.score,
             energy: p.energy,
             role: p.role,
-            handCount: p.hand.length
+            handCount: p.hand.length,
+            actedThisTurn: p.actedThisTurn
         })),
         dealerIndex: gameState.dealerIndex,
         currentPlayerIndex: gameState.currentPlayerIndex,
@@ -167,6 +173,7 @@ function getPublicState() {
         discardCount: gameState.discardPile.length,
         hudMessage: gameState.hudMessage,
         evacuationMode: gameState.evacuationMode,
+        evacuationTriggerCause: gameState.evacuationTriggerCause,
         evacuationIndex: gameState.evacuationIndex,
         evacuationOrder: gameState.evacuationOrder,
         activeReaction: gameState.activeReaction
@@ -176,7 +183,13 @@ function getPublicState() {
                 startedAt: gameState.activeReaction.startedAt,
                 timeoutMs: REACTION_TIMEOUT_MS
               }
-            : null
+            : null,
+        pendingCancel: null,
+        lastPlayedCard: gameState.lastPlayedCard
+            ? { playerId: gameState.lastPlayedCard.playerId, card: gameState.lastPlayedCard.card }
+            : null,
+        scoreboard: gameState.scoreboard || [],
+        role4UsedThisTurn: gameState.role4UsedThisTurn
     };
 }
 
@@ -328,21 +341,28 @@ function resolveTarget() {
 }
 
 function continueResolveTarget(target, winner) {
-    const lastCard = gameState.agendaPile[gameState.agendaPile.length - 1];
-
     if (target.type === "SPECIAL_X") {
         const rivals = gameState.players.filter(p => p.id !== winner.id);
         if (rivals.length > 0) {
-            const victim = rivals[Math.floor(Math.random() * rivals.length)];
-            victim.score = Math.max(0, victim.score - 10);
-            gameState.hudMessage = `${winner.name} ÖZEL-X: ${victim.name}'in 10 puanını sildi!`;
+            startReaction("SPECIAL_X_CHOOSE", winner.id, (victimId) => {
+                let victim = rivals.find(p => p.id === victimId);
+                if (!victim) {
+                    // Fallback to random if decision is invalid/passed
+                    victim = rivals[Math.floor(Math.random() * rivals.length)];
+                }
+                victim.score = Math.max(0, victim.score - 10);
+                gameState.hudMessage = `${winner.name} ÖZEL-X: ${victim.name}'in 10 puanını sildi!`;
+                finalizeResolveTarget(target, winner);
+            });
         } else {
             gameState.hudMessage = `${winner.name} ÖZEL-X'i çözdü, ancak puanı silinecek rakip bulunamadı!`;
+            finalizeResolveTarget(target, winner);
         }
     } else if (target.type === "SPECIAL_Y") {
         winner.score += 5;
         gameState.players.forEach(p => { if (p.id !== winner.id) p.score = Math.max(0, p.score - 5); });
         gameState.hudMessage = `${winner.name} ÖZEL-Y: +5, diğerleri -5!`;
+        finalizeResolveTarget(target, winner);
     } else {
         let reward = target.reward || 10;
         let hasSynergy = false;
@@ -360,7 +380,13 @@ function continueResolveTarget(target, winner) {
         }
         winner.score += reward;
         gameState.hudMessage = `${winner.name} hedefi çözdü! ${hasSynergy ? '(SİNERJİ BONUSU!) ' : ''}+${reward}`;
+        finalizeResolveTarget(target, winner);
     }
+}
+
+function finalizeResolveTarget(target, winner) {
+    gameState.lastPlayedCard = null;
+    const lastCard = gameState.agendaPile[gameState.agendaPile.length - 1];
 
     const role2 = findRole("ROLE_2");
     if (role2 && target.color === "BLUE" && winner.id !== role2.id) {
@@ -372,8 +398,33 @@ function continueResolveTarget(target, winner) {
         role6.score = Math.max(0, role6.score - 2);
     }
 
-    moveAgendaToDiscard();
+    const winnerIndex = gameState.players.findIndex(p => p.id === winner.id);
+
     rotateDealer();
+
+    if (winnerIndex !== -1) {
+        gameState.currentPlayerIndex = winnerIndex;
+    }
+
+    moveAgendaToDiscard();
+
+    if (gameState.evacuationMode) {
+        if (gameState.evacuationTriggerCause === "TARGET_DECK" && gameState.targetDeck.length === 0) {
+            gameState.players.forEach(p => {
+                p.hand.forEach(c => gameState.discardPile.push(c));
+                p.hand = [];
+            });
+            finalizeEvacuation();
+            return;
+        }
+
+        const anyCardsLeft = gameState.players.some(p => p.hand.length > 0);
+        if (!anyCardsLeft) {
+            finalizeEvacuation();
+            return;
+        }
+    }
+
     revealTarget();
     checkVictory();
     broadcastState();
@@ -385,40 +436,19 @@ function continueResolveTarget(target, winner) {
 function checkDeckExhaustion() {
     if (gameState.evacuationMode) return;
     const noWinner = !gameState.players.some(p => p.score >= 51);
-    const deckEmpty = gameState.centerDeck.length === 0 || gameState.targetDeck.length === 0;
-    if (deckEmpty && noWinner) {
-        startEvacuation();
-    }
-}
-
-function startEvacuation() {
-    gameState.evacuationMode = true;
-    gameState.evacuationOrder = gameState.players.filter(p => p.hand.length > 0).map(p => p.id);
-    gameState.evacuationIndex = 0;
-    gameState.hudMessage = "TAHLİYE SAFHASINA GEÇİLDİ! Sırayla 1 enerji harcayarak elinizdeki kartı atın.";
-    broadcastState();
-    promptEvacuationTurn();
-}
-
-function promptEvacuationTurn() {
-    if (gameState.evacuationIndex >= gameState.evacuationOrder.length) {
-        const anyLeft = gameState.players.some(p => p.hand.length > 0);
-        if (anyLeft) {
-            gameState.evacuationIndex = 0;
-            gameState.evacuationOrder = gameState.players.filter(p => p.hand.length > 0).map(p => p.id);
-            promptEvacuationTurn();
-        } else {
-            finalizeEvacuation();
+    if (noWinner) {
+        if (gameState.targetDeck.length === 0) {
+            startEvacuation("TARGET_DECK");
+        } else if (gameState.centerDeck.length === 0) {
+            startEvacuation("CENTER_DECK");
         }
-        return;
     }
-    const pid = gameState.evacuationOrder[gameState.evacuationIndex];
-    const player = findPlayer(pid);
-    if (!player || player.hand.length === 0) {
-        gameState.evacuationIndex++;
-        promptEvacuationTurn();
-        return;
-    }
+}
+
+function startEvacuation(cause = null) {
+    gameState.evacuationMode = true;
+    gameState.evacuationTriggerCause = cause;
+    gameState.hudMessage = "TAHLİYE SAFHASINA GEÇİLDİ! Sırayla kartlarınızı oynayarak hedefi çözmeye çalışın veya manevra yapın.";
     broadcastState();
 }
 
@@ -429,8 +459,19 @@ function finalizeEvacuation() {
     gameState.centerDeck = shuffle(all);
     gameState.discardPile = [];
     gameState.evacuationMode = false;
+    gameState.evacuationTriggerCause = null;
+    if (gameState.targetDeck.length === 0) {
+        gameState.targetDeck = createTargetDeck();
+    }
     gameState.players.forEach(p => {
         p.hand = [];
+        p.energy = 3;
+        p.skipDraw = false;
+        p.cancelPenalty = false;
+        p.actedThisTurn = false;
+        p.usedBlackDiscount = false;
+        p.playedToAgendaThisTurn = false;
+        p.role4DrawnThisRound = false;
         drawCards(p, 5);
     });
     revealTarget();
@@ -458,7 +499,30 @@ function moveAgendaToDiscard(triggerSalvage = true) {
 }
 
 function nextPlayer() {
+    if (gameState.evacuationMode) {
+        const anyCardsLeft = gameState.players.some(p => p.hand.length > 0);
+        if (!anyCardsLeft) {
+            finalizeEvacuation();
+            return;
+        }
+    }
+
+    const wasDealer = gameState.currentPlayerIndex === gameState.dealerIndex;
     gameState.currentPlayerIndex = (gameState.currentPlayerIndex + 1) % gameState.players.length;
+
+    if (wasDealer && gameState.currentTarget && gameState.currentTarget.type === "SPECIAL_Y") {
+        gameState.specialYTurnCount++;
+        if (gameState.specialYTurnCount >= gameState.specialYTurnLimit) {
+            gameState.players.forEach(p => p.score = Math.max(0, p.score - 7));
+            gameState.hudMessage = "ÖZEL-Y çözülemedi! Herkes -7 skor!";
+            moveAgendaToDiscard();
+            rotateDealer();
+            revealTarget();
+            broadcastState();
+            return;
+        }
+    }
+
     beginTurn();
 }
 
@@ -466,21 +530,8 @@ function beginTurn() {
     const player = currentPlayer();
     player.actedThisTurn = false;
     player.playedToAgendaThisTurn = false;
-
-    if (gameState.currentTarget && gameState.currentTarget.type === "SPECIAL_Y") {
-        if (gameState.currentPlayerIndex === gameState.dealerIndex) {
-            gameState.specialYTurnCount++;
-            if (gameState.specialYTurnCount >= gameState.specialYTurnLimit) {
-                gameState.players.forEach(p => p.score = Math.max(0, p.score - 7));
-                gameState.hudMessage = "ÖZEL-Y çözülemedi! Herkes -7 skor!";
-                moveAgendaToDiscard();
-                rotateDealer();
-                revealTarget();
-                broadcastState();
-                return;
-            }
-        }
-    }
+    gameState.lastPlayedCard = null;
+    gameState.role4UsedThisTurn = false;
 
     if (player.cancelPenalty) {
         player.energy = 2;
@@ -489,18 +540,21 @@ function beginTurn() {
         player.energy = 3;
     }
 
-    const role2 = findRole("ROLE_2");
-    if (role2 && role2.id === player.id && role2.bonusEnergy) {
-        player.energy += 2;
-        role2.bonusEnergy = false;
-    }
 
     gameState.hudMessage = `${player.name} sırası başladı`;
     broadcastState();
 }
 
 function drawEndTurn(player) {
-    if (player.role === "ROLE_4") return;
+    if (player.role === "ROLE_4") {
+        if (player.role4DrawnThisRound) {
+            player.role4DrawnThisRound = false;
+            return;
+        }
+        player.role4DrawnThisRound = false;
+        drawCard(player);
+        return;
+    }
     if (player.skipDraw) {
         player.skipDraw = false;
         return;
@@ -515,21 +569,257 @@ function drawEndTurn(player) {
     drawCard(player);
 }
 
+// ─────────────────────────────────────────────
+//  CANCEL DUEL SYSTEM (REDESIGNED)
+// ─────────────────────────────────────────────
+let cancelCandidates = [];
+let cancelCount = 0;
+let lastCancellerId = null;
+
+function getCardNameTurkish(card) {
+    if (!card) return "";
+    if (card.type === "POWER") return `${card.color} ${card.value} Güç`;
+    if (card.type === "CANCEL") return "İptal (Cancel)";
+    if (card.type === "REDUCE") return "Sabotaj (Reduce)";
+    if (card.type === "CHANGE_TARGET") return "Gündem Değiştir";
+    if (card.type === "REFRESH") return "Fonlama (Refresh)";
+    return card.type;
+}
+
+function revertLastPlayedCard() {
+    if (!gameState.lastPlayedCard || !gameState.lastPlayedCard.revertData) return;
+
+    const { playerId, card, revertData } = gameState.lastPlayedCard;
+    const player = findPlayer(playerId);
+
+    if (revertData.type === "POWER") {
+        const idx = gameState.agendaPile.findIndex(c => c.type === "POWER" && c.owner === playerId && c.value === card.value && c.color === card.color);
+        if (idx !== -1) {
+            const removed = gameState.agendaPile.splice(idx, 1)[0];
+            gameState.discardPile.push(removed);
+            triggerRole4Reaction(removed);
+        }
+    }
+    else if (revertData.type === "REDUCE") {
+        const di = gameState.discardPile.indexOf(card);
+        if (di !== -1) gameState.discardPile.splice(di, 1);
+        
+        if (revertData.removedCard) {
+            gameState.agendaPile.push(revertData.removedCard);
+            const rdi = gameState.discardPile.indexOf(revertData.removedCard);
+            if (rdi !== -1) gameState.discardPile.splice(rdi, 1);
+        }
+    }
+    else if (revertData.type === "CHANGE_TARGET") {
+        const di = gameState.discardPile.indexOf(card);
+        if (di !== -1) gameState.discardPile.splice(di, 1);
+
+        if (gameState.currentTarget) {
+            gameState.targetDeck.shift(); 
+        }
+        gameState.currentTarget = revertData.prevTarget;
+        gameState.agendaPile = revertData.prevAgenda;
+    }
+    else if (revertData.type === "REFRESH") {
+        const di = gameState.discardPile.indexOf(card);
+        if (di !== -1) gameState.discardPile.splice(di, 1);
+
+        if (player) {
+            player.hand.forEach(c => gameState.discardPile.push(c));
+            player.hand = revertData.prevHand;
+        }
+    }
+}
+
+function executeCardPlayDirect(player, card) {
+    if (player.role === "ROLE_1" && card.type === "REFRESH") {
+        player.score = Math.max(0, player.score - 1);
+    }
+
+    let revertData = null;
+
+    if (card.type === "POWER") {
+        let power = calculatePower(card, player);
+
+        if (player.role === "ROLE_5" && gameState.currentTarget && gameState.currentTarget.color === "RED" && gameState.role5RedPenaltyCount < 2) {
+            power = Math.max(0, power - 1);
+            gameState.role5RedPenaltyCount++;
+        }
+        if (player.role === "ROLE_4" && gameState.currentTarget && gameState.currentTarget.color === "RED" && card.color !== "RED") {
+            power = Math.max(0, power - 1);
+        }
+
+        gameState.agendaPile.push({ ...card, owner: player.id, power, thisRound: true });
+        player.playedToAgendaThisTurn = true;
+        gameState.hudMessage = `${player.name} güç kartı oynadı (Güç: ${power})`;
+        
+        revertData = { type: "POWER" };
+        
+        checkTargetSolved();
+    }
+    else if (card.type === "REDUCE") {
+        let removed = null;
+        if (gameState.agendaPile.length > 0) {
+            removed = gameState.agendaPile.pop();
+            gameState.discardPile.push(removed);
+            triggerRole4Reaction(removed);
+        } else {
+            triggerRole4Reaction(card);
+        }
+        gameState.discardPile.push(card);
+
+        revertData = { type: "REDUCE", removedCard: removed };
+        gameState.hudMessage = `${player.name} sabotaj kartı oynadı.`;
+    }
+    else if (card.type === "CHANGE_TARGET") {
+        const prevTarget = gameState.currentTarget;
+        const prevAgenda = [...gameState.agendaPile];
+
+        gameState.discardPile.push(card);
+        moveAgendaToDiscard(false);
+        if (gameState.currentTarget) gameState.targetDeck.unshift(gameState.currentTarget);
+        shuffle(gameState.targetDeck);
+        gameState.currentTarget = null;
+        triggerRole4Reaction(card);
+        revealTarget();
+
+        revertData = { type: "CHANGE_TARGET", prevTarget, prevAgenda };
+        gameState.hudMessage = `${player.name} gündem değiştirdi.`;
+    }
+    else if (card.type === "REFRESH") {
+        const prevHand = [...player.hand];
+
+        gameState.discardPile.push(card);
+        player.hand.forEach(c => gameState.discardPile.push(c));
+        player.hand = [];
+        drawCards(player, 5);
+        triggerRole4Reaction(card);
+
+        revertData = { type: "REFRESH", prevHand };
+        gameState.hudMessage = `${player.name} fonlama yaptı.`;
+    }
+
+    gameState.lastPlayedCard = {
+        playerId: player.id,
+        card: card,
+        revertData: revertData
+    };
+}
+
+function startCancelDuelCheck() {
+    cancelCandidates = gameState.players.filter(p => p.id !== lastCancellerId && p.hand.some(c => c.type === "CANCEL"));
+    
+    const activePlayer = currentPlayer();
+    cancelCandidates.sort((a, b) => {
+        if (a.id === activePlayer.id) return -1;
+        if (b.id === activePlayer.id) return 1;
+        return 0;
+    });
+
+    if (cancelCandidates.length > 0) {
+        askNextCancelCounter();
+    } else {
+        resolveCancelDuelResult();
+    }
+}
+
+function askNextCancelCounter() {
+    if (cancelCandidates.length === 0) {
+        resolveCancelDuelResult();
+        return;
+    }
+
+    const candidate = cancelCandidates.shift();
+    gameState.hudMessage = `Son İptal kartına karşı konulacak mı? Sıra: ${candidate.name}`;
+
+    startReaction("CANCEL_COUNTER", candidate.id, (decision) => {
+        if (decision === "accept") {
+            playCounterCancelCard(candidate);
+        } else {
+            askNextCancelCounter();
+        }
+    });
+}
+
+function playCounterCancelCard(candidate) {
+    const cardIndex = candidate.hand.findIndex(c => c.type === "CANCEL");
+    if (cardIndex === -1) {
+        askNextCancelCounter();
+        return;
+    }
+
+    candidate.hand.splice(cardIndex, 1);
+
+    const activePlayer = currentPlayer();
+    if (candidate.id === activePlayer.id) {
+        // Active player counters for free!
+    } else {
+        candidate.cancelPenalty = true;
+    }
+
+    const cancelCard = { type: "CANCEL", cost: 0 };
+    gameState.discardPile.push(cancelCard);
+
+    cancelCount++;
+    lastCancellerId = candidate.id;
+
+    gameState.hudMessage = `${candidate.name} İptal kartına karşı koydu (İptal Zinciri: ${cancelCount})!`;
+    startCancelDuelCheck();
+}
+
+function resolveCancelDuelResult() {
+    const isCancelled = (cancelCount % 2 === 1);
+    
+    if (isCancelled) {
+        if (gameState.lastPlayedCard) {
+            gameState.hudMessage = `${currentPlayer().name}'in oynadığı kart İPTAL edildi!`;
+            revertLastPlayedCard();
+        }
+    } else {
+        gameState.hudMessage = `İptal zinciri sonuçsuz kaldı! Kart korundu.`;
+    }
+    
+    gameState.lastPlayedCard = null;
+    broadcastState();
+}
+
 function checkVictory() {
     const winner = gameState.players.find(p => p.score >= 51);
     if (!winner) return;
     gameState.hudMessage = `🏆 ${winner.name} PARTİYİ KAZANDI!`;
     gameState.started = false;
+
+    if (!gameState.scoreboard) {
+        gameState.scoreboard = [];
+    }
+    const exists = gameState.scoreboard.some(entry => entry.name === winner.name && entry.score === winner.score);
+    if (!exists) {
+        gameState.scoreboard.push({
+            name: winner.name,
+            score: winner.score
+        });
+    }
+
     broadcastState();
 }
 
 function startGame() {
     gameState.started = true;
     gameState.evacuationMode = false;
+    gameState.evacuationTriggerCause = null;
     gameState.centerDeck = createCenterDeck();
     gameState.targetDeck = createTargetDeck();
     gameState.discardPile = [];
     gameState.agendaPile = [];
+    gameState.role3UsesThisTurn = 0;
+    gameState.role4UsedThisTurn = false;
+    gameState.role5UsesTotal = 0;
+    gameState.role5RedPenaltyCount = 0;
+    gameState.role3NoPenaltyCount = 0;
+    gameState.activeReaction = null;
+    gameState.lastPlayedCard = null;
+    gameState.specialYTurnCount = 0;
+    gameState.specialYTurnLimit = null;
 
     shuffle(gameState.players);
     const shuffledRoles = shuffle([...ROLES]).slice(0, gameState.players.length);
@@ -543,94 +833,13 @@ function startGame() {
         p.actedThisTurn = false;
         p.usedBlackDiscount = false;
         p.playedToAgendaThisTurn = false;
+        p.role4DrawnThisRound = false;
         drawCards(p, 5);
     });
 
     gameState.dealerIndex = Math.floor(Math.random() * gameState.players.length);
     gameState.currentPlayerIndex = (gameState.dealerIndex + 1) % gameState.players.length;
     revealTarget();
-    broadcastState();
-}
-
-// ─────────────────────────────────────────────
-//  CANCEL DUEL SYSTEM
-// ─────────────────────────────────────────────
-let pendingCancel = null;
-
-function handleCancel(socket, targetId) {
-    const attacker = findPlayer(socket.id);
-    if (!attacker) return;
-
-    const cardIndex = attacker.hand.findIndex(c => c.type === "CANCEL");
-    if (cardIndex === -1) return;
-
-    attacker.hand.splice(cardIndex, 1);
-    attacker.cancelPenalty = true;
-
-    // Discard the played CANCEL card
-    const cancelCard = { type: "CANCEL", cost: 0 };
-    gameState.discardPile.push(cancelCard);
-
-    // Cancel the last played card in the agenda pile if any
-    let cancelledCard = null;
-    if (gameState.agendaPile.length > 0) {
-        cancelledCard = gameState.agendaPile.pop();
-        gameState.discardPile.push(cancelledCard);
-        gameState.hudMessage = `${attacker.name} İPTAL (NOPE) oynadı! Son oynanan ${cancelledCard.type === 'POWER' ? (cancelledCard.color + ' ' + cancelledCard.value + ' Güç') : cancelledCard.type} kartı iptal edildi.`;
-    } else {
-        gameState.hudMessage = `${attacker.name} İPTAL (NOPE) oynadı, ancak iptal edilecek kart bulunamadı!`;
-    }
-
-    if (pendingCancel && pendingCancel.targetId === socket.id) {
-        attacker.cancelPenalty = false;
-        const originalAttacker = findPlayer(pendingCancel.ownerId);
-        if (originalAttacker && originalAttacker.hand.length > 0) {
-            const ri = Math.floor(Math.random() * originalAttacker.hand.length);
-            originalAttacker.hand.splice(ri, 1);
-            originalAttacker.cancelPenalty = true;
-        }
-        pendingCancel = null;
-        gameState.hudMessage = `${attacker.name} CANCEL'ı karşıladı! Meşru Müdafaa.`;
-        
-        // Trigger ROLE_4 salvage
-        triggerRole4Reaction(cancelCard);
-        broadcastState();
-        return;
-    }
-
-    pendingCancel = { ownerId: socket.id, targetId };
-
-    const role2 = findRole("ROLE_2");
-    if (role2 && role2.id !== socket.id) {
-        startReaction("ROLE2_CANCEL", role2.id, (decision) => {
-            pendingCancel = null;
-            if (decision === "accept") {
-                if (attacker.hand.length > 0) {
-                    const ri = Math.floor(Math.random() * attacker.hand.length);
-                    attacker.hand.splice(ri, 1);
-                }
-                role2.bonusEnergy = true;
-                gameState.hudMessage = `ROLE_2 CANCEL'ı mühürledi! Saldırgan kart kaybetti.`;
-            } else {
-                gameState.hudMessage = `ROLE_2 reaksiyonu geçti.`;
-            }
-            // Trigger ROLE_4 salvage
-            if (cancelledCard) {
-                triggerRole4Reaction(cancelledCard);
-            } else {
-                triggerRole4Reaction(cancelCard);
-            }
-            broadcastState();
-        });
-    } else {
-        pendingCancel = null;
-        // Trigger ROLE_4 salvage
-        if (cancelledCard) {
-            triggerRole4Reaction(cancelledCard);
-        } else {
-            triggerRole4Reaction(cancelCard);
-        }
-    }
     broadcastState();
 }
 
@@ -652,17 +861,56 @@ io.on("connection", (socket) => {
         if (!gameState.started && gameState.players.length >= 2) startGame();
     });
 
+
+
+
+
+    socket.on("playAgain", () => {
+        gameState.started = false;
+        gameState.evacuationMode = false;
+        gameState.evacuationTriggerCause = null;
+        gameState.agendaPile = [];
+        gameState.discardPile = [];
+        gameState.currentTarget = null;
+        gameState.lastPlayedCard = null;
+
+        gameState.players.forEach(p => {
+            p.role = null;
+            p.score = 0;
+            p.energy = 3;
+            p.hand = [];
+            p.skipDraw = false;
+            p.cancelPenalty = false;
+            p.actedThisTurn = false;
+            p.usedBlackDiscount = false;
+            p.playedToAgendaThisTurn = false;
+            p.role4DrawnThisRound = false;
+        });
+
+        gameState.hudMessage = "Oyuncular bekleniyor...";
+        broadcastState();
+    });
+
+
+
+
+
+
+
     socket.on("playCard", (cardIndex) => {
-        if (!gameState.started || gameState.activeReaction || gameState.evacuationMode) return;
+        if (!gameState.started || gameState.activeReaction) return;
         const player = findPlayer(socket.id);
         if (!player) return;
 
         const card = player.hand[cardIndex];
         if (!card) return;
 
-        // Non-active players can only play CANCEL card out of turn
+        // Under new rules, CANCEL cards cannot be played directly from hand in playCard.
+        if (card.type === "CANCEL") return;
+
+        // Only active player can play non-CANCEL cards
         const isCurrent = player.id === currentPlayer().id;
-        if (!isCurrent && card.type !== "CANCEL") return;
+        if (!isCurrent) return;
 
         let effectiveCost = card.cost;
         if (player.role === "ROLE_1" && card.type !== "POWER" && !player.usedBlackDiscount) {
@@ -675,106 +923,68 @@ io.on("connection", (socket) => {
 
         if (player.energy < effectiveCost) return;
 
-        if (player.role === "ROLE_1" && card.type === "REFRESH") {
-            player.score = Math.max(0, player.score - 1);
+        player.energy -= effectiveCost;
+        if (effectiveCost >= 1) {
+            player.actedThisTurn = true;
         }
+        player.hand.splice(cardIndex, 1);
 
-        if (card.type === "POWER") {
-            player.energy -= effectiveCost;
-            if (effectiveCost >= 1) {
-                player.actedThisTurn = true;
-            }
-            player.hand.splice(cardIndex, 1);
+        executeCardPlayDirect(player, card);
 
-            let power = calculatePower(card, player);
-
-            if (player.role === "ROLE_5" && gameState.currentTarget && gameState.currentTarget.color === "RED" && gameState.role5RedPenaltyCount < 2) {
-                power = Math.max(0, power - 1);
-                gameState.role5RedPenaltyCount++;
-            }
-            if (player.role === "ROLE_4" && gameState.currentTarget && gameState.currentTarget.color === "RED" && card.color !== "RED") {
-                power = Math.max(0, power - 1);
-            }
-
-            gameState.agendaPile.push({ ...card, owner: player.id, power, thisRound: true });
-            player.playedToAgendaThisTurn = true;
-            gameState.hudMessage = `${player.name} güç kartı oynadı (Güç: ${power})`;
-            checkTargetSolved();
-            broadcastState();
-            return;
-        }
-
-        if (card.type === "CANCEL") {
-            handleCancel(socket, currentPlayer().id);
-            return;
-        }
-
-        if (card.type === "REDUCE") {
-            player.energy -= effectiveCost;
-            if (effectiveCost >= 1) {
-                player.actedThisTurn = true;
-            }
-            player.hand.splice(cardIndex, 1);
-            gameState.discardPile.push(card);
-
-            if (gameState.agendaPile.length > 0) {
-                const removed = gameState.agendaPile.pop();
-                gameState.discardPile.push(removed);
-                triggerRole4Reaction(removed);
-            } else {
-                triggerRole4Reaction(card);
-            }
-            broadcastState();
-            return;
-        }
-
-        if (card.type === "CHANGE_TARGET") {
-            player.energy -= effectiveCost;
-            if (effectiveCost >= 1) {
-                player.actedThisTurn = true;
-            }
-            player.hand.splice(cardIndex, 1);
-            
-            // Discard the played CHANGE_TARGET card
-            gameState.discardPile.push(card);
-
-            moveAgendaToDiscard(false);
-            if (gameState.currentTarget) gameState.targetDeck.unshift(gameState.currentTarget);
-            shuffle(gameState.targetDeck);
-            gameState.currentTarget = null;
-            
-            // Trigger salvage for the CHANGE_TARGET card
-            triggerRole4Reaction(card);
-            
-            revealTarget();
-            broadcastState();
-            return;
-        }
-
-        if (card.type === "REFRESH") {
-            player.energy -= effectiveCost;
-            if (effectiveCost >= 1) {
-                player.actedThisTurn = true;
-            }
-            player.hand.splice(cardIndex, 1);
-            gameState.discardPile.push(card);
-
-            player.hand.forEach(c => gameState.discardPile.push(c));
-            player.hand = [];
-            drawCards(player, 5);
-            triggerRole4Reaction(card);
-            broadcastState();
-            return;
-        }
+        broadcastState();
     });
 
-    socket.on("playCancel", ({ cardIndex, targetId }) => {
+    socket.on("playCancel", (cardIndex) => {
         if (!gameState.started || gameState.activeReaction) return;
-        handleCancel(socket, targetId);
+        const player = findPlayer(socket.id);
+        if (!player) return;
+
+        const card = player.hand[cardIndex];
+        if (!card || card.type !== "CANCEL") return;
+
+        if (!gameState.lastPlayedCard) return;
+        const activePlayer = currentPlayer();
+        if (player.id === activePlayer.id) return; 
+        if (gameState.lastPlayedCard.playerId !== activePlayer.id) return;
+
+        player.hand.splice(cardIndex, 1);
+        player.cancelPenalty = true;
+
+        const cancelCard = { type: "CANCEL", cost: 0 };
+        gameState.discardPile.push(cancelCard);
+
+        cancelCount = 1;
+        lastCancellerId = player.id;
+
+        const role2 = findRole("ROLE_2");
+        if (role2 && role2.id !== player.id) {
+            gameState.hudMessage = `ROLE_2 (${role2.name}) CANCEL'a müdahale edebilir.`;
+            startReaction("ROLE2_CANCEL", role2.id, (decision) => {
+                if (decision === "accept") {
+                    role2.cancelPenalty = true;
+                    if (player.hand.length > 0) {
+                        const ri = Math.floor(Math.random() * player.hand.length);
+                        player.hand.splice(ri, 1);
+                    }
+                    gameState.hudMessage = `ROLE_2 CANCEL'ı mühürledi! ${player.name} kart kaybetti.`;
+                    triggerRole4Reaction(cancelCard);
+                    gameState.lastPlayedCard = null;
+                    broadcastState();
+                } else {
+                    gameState.hudMessage = `${player.name} İptal (Cancel) kartı oynadı! Düello başlıyor.`;
+                    startCancelDuelCheck();
+                }
+            });
+        } else {
+            gameState.hudMessage = `${player.name} İptal (Cancel) kartı oynadı! Düello başlıyor.`;
+            startCancelDuelCheck();
+        }
+
+        broadcastState();
     });
 
     socket.on("maneuver", (cardIndex) => {
-        if (!gameState.started || gameState.activeReaction || currentPlayer().id !== socket.id || currentPlayer().energy < 1) return;
+        if (!gameState.started || gameState.activeReaction || currentPlayer().id !== socket.id || currentPlayer().energy < 1 || currentPlayer().actedThisTurn) return;
         const player = currentPlayer();
         const card = player.hand[cardIndex];
         if (!card) return;
@@ -785,6 +995,19 @@ io.on("connection", (socket) => {
         gameState.discardPile.push(card);
         triggerRole4Reaction(card);
         drawCard(player);
+        player.skipDraw = true;
+        player.role4DrawnThisRound = true;
+
+        if (player.role === "ROLE_3") {
+            if (!player.playedToAgendaThisTurn && gameState.role3NoPenaltyCount < 5) {
+                player.score = Math.max(0, player.score - 1);
+                gameState.role3NoPenaltyCount++;
+            }
+        }
+
+        player.usedBlackDiscount = false;
+        drawEndTurn(player);
+        nextPlayer();
         broadcastState();
     });
 
@@ -800,6 +1023,8 @@ io.on("connection", (socket) => {
                 gameState.discardPile.push(card);
                 triggerRole4Reaction(card);
                 drawCard(player);
+                player.skipDraw = true;
+                player.role4DrawnThisRound = true;
             }
             player.actedThisTurn = true;
             drawEndTurn(player);
@@ -847,28 +1072,7 @@ io.on("connection", (socket) => {
         resolveReaction(decision);
     });
 
-    socket.on("evacuationDiscard", (cardIndex) => {
-        if (!gameState.evacuationMode) return;
-        const pid = gameState.evacuationOrder[gameState.evacuationIndex];
-        if (socket.id !== pid) return;
 
-        const player = findPlayer(socket.id);
-        if (!player) return;
-
-        const card = player.hand[cardIndex];
-        if (!card) return;
-
-        if (player.energy >= 1) {
-            player.energy--;
-        }
-        player.hand.splice(cardIndex, 1);
-        gameState.discardPile.push(card);
-
-        gameState.evacuationIndex++;
-        const anyLeft = gameState.players.some(p => p.hand.length > 0);
-        if (!anyLeft) finalizeEvacuation();
-        else promptEvacuationTurn();
-    });
 
     socket.on("disconnect", () => {
         const idx = gameState.players.findIndex(p => p.id === socket.id);
@@ -879,13 +1083,9 @@ io.on("connection", (socket) => {
                 gameState.started = false;
             } else if (gameState.started) {
                 if (gameState.evacuationMode) {
-                    gameState.evacuationOrder = gameState.evacuationOrder.filter(id => id !== socket.id);
-                    if (gameState.evacuationIndex >= gameState.evacuationOrder.length) {
-                        gameState.evacuationIndex = 0;
-                    }
                     const anyLeft = gameState.players.some(p => p.hand.length > 0);
                     if (!anyLeft) finalizeEvacuation();
-                    else promptEvacuationTurn();
+                    else nextPlayer();
                 } else {
                     nextPlayer();
                 }
@@ -900,16 +1100,32 @@ io.on("connection", (socket) => {
 // ─────────────────────────────────────────────
 function triggerRole4Reaction(discardedCard) {
     const role4 = findRole("ROLE_4");
-    if (!role4 || gameState.role4UsedThisTurn || gameState.evacuationMode) return;
+    if (!role4 || gameState.role4UsedThisTurn || gameState.evacuationMode || role4.energy < 1) return;
+
+    // Do not trigger salvage during Role 4's own turn
+    const curP = currentPlayer();
+    if (curP && curP.id === role4.id) return;
+
+    const originalPlayerId = curP.id;
 
     startReaction("ROLE4_SALVAGE", role4.id, (decision) => {
         if (decision === "take" && role4.energy >= 1) {
             role4.energy--;
             role4.hand.push(discardedCard);
+            role4.role4DrawnThisRound = true;
             gameState.role4UsedThisTurn = true;
             const di = gameState.discardPile.findIndex(c => c === discardedCard);
             if (di !== -1) gameState.discardPile.splice(di, 1);
         }
+        
+        // Restore turn to the player who was active when reaction was triggered, only if the turn hasn't transitioned
+        if (gameState.players[gameState.currentPlayerIndex] && gameState.players[gameState.currentPlayerIndex].id === originalPlayerId) {
+            const pIdx = gameState.players.findIndex(p => p.id === originalPlayerId);
+            if (pIdx !== -1) {
+                gameState.currentPlayerIndex = pIdx;
+            }
+        }
+
         broadcastState();
     });
 }

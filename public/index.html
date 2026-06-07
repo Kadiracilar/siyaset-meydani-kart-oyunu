@@ -451,9 +451,22 @@ body::before {
 <!-- ── LOBBY SCREEN ── -->
 <div id="lobbyScreen" class="screen hidden">
   <div class="lobby-title">OYUN LOBİSİ</div>
-  <div id="playerList"></div>
-  <div class="lobby-info" id="lobbyInfo">0 / 6 Oyuncu Bağlı</div>
-  <button class="btn btn-primary" id="startBtn" disabled>OYUNU BAŞLAT</button>
+  <div style="display: flex; gap: 40px; align-items: flex-start; justify-content: center; width: 90%; max-width: 900px; margin-top: 20px;">
+    <!-- Active Players -->
+    <div style="flex: 1; display: flex; flex-direction: column; gap: 15px; align-items: center; background: var(--surface); border: 1px solid var(--border); padding: 20px; border-radius: 8px; box-shadow: var(--glow);">
+      <div class="tz-label" style="font-size: 16px; font-weight: 700; color: var(--accent); letter-spacing: 2px;">BAĞLI OYUNCULAR</div>
+      <div id="playerList" style="min-height: 80px; display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;"></div>
+      <div class="lobby-info" id="lobbyInfo">0 / 6 Oyuncu Bağlı</div>
+      <button class="btn btn-primary" id="startBtn" disabled style="margin-top: 10px; width: 100%;">OYUNU BAŞLAT</button>
+    </div>
+    <!-- Scoreboard (Parti Tablosu) -->
+    <div style="flex: 1; display: flex; flex-direction: column; gap: 15px; background: var(--surface); border: 1px solid var(--border); padding: 20px; border-radius: 8px; height: 260px; overflow: hidden;">
+      <div class="tz-label" style="font-size: 16px; font-weight: 700; color: var(--accent3); letter-spacing: 2px; text-align: center;">PARTİ SKOR TABLOSU (50+1)</div>
+      <div id="scoreboardList" class="scroll" style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
+        <div style="text-align: center; color: var(--text-dim); font-size: 14px; margin-top: 40px;">Henüz tamamlanan parti yok.</div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ── GAME SCREEN ── -->
@@ -528,6 +541,7 @@ body::before {
       <span class="en" id="myEnergy">⚡ 3</span>
     </div>
     <div id="handCards"></div>
+    <div id="myRoleInfo" style="text-align: center; margin-top: 12px; font-size: 14px; font-weight: 600;"></div>
   </div>
 
 </div>
@@ -554,7 +568,7 @@ body::before {
   <div class="win-box">
     <div class="logo" style="font-size: 64px; text-shadow: 0 0 30px var(--green); color: var(--green);">TEBRİKLER</div>
     <div id="winName">OYUNCU KAZANDI</div>
-    <button class="btn btn-primary" onclick="window.location.reload()">TEKRAR OYNA</button>
+    <button class="btn btn-primary" id="playAgainBtn">TEKRAR OYNA</button>
   </div>
 </div>
 
