@@ -69,11 +69,11 @@ function findRole(role) {
 // ─────────────────────────────────────────────
 function createTargetDeck() {
     const deck = [];
-    for (let i = 0; i < 4; i++) deck.push({ type: "TARGET", color: "RED",    threshold: 10, reward: 10, turnLimit: 4 });
-    for (let i = 0; i < 4; i++) deck.push({ type: "TARGET", color: "BLUE",   threshold: 10, reward: 10, turnLimit: 4 });
+    for (let i = 0; i < 4; i++) deck.push({ type: "TARGET", color: "RED", threshold: 10, reward: 10, turnLimit: 4 });
+    for (let i = 0; i < 4; i++) deck.push({ type: "TARGET", color: "BLUE", threshold: 10, reward: 10, turnLimit: 4 });
     for (let i = 0; i < 4; i++) deck.push({ type: "TARGET", color: "YELLOW", threshold: 10, reward: 10, turnLimit: 4 });
-    deck.push({ type: "SPECIAL_X", threshold: 8,  turnLimit: 4 });
-    deck.push({ type: "SPECIAL_Y", threshold: 10, turnLimit: 2 });
+    deck.push({ type: "SPECIAL_X", threshold: 8, turnLimit: 4, desc: "Çözen kişi seçtiği bir rakipten 10 skor siler." });
+    deck.push({ type: "SPECIAL_Y", threshold: 10, turnLimit: 2, desc: "Global kriz! Çözen +5, diğerleri -5 alır. Çözülemezse herkesten -7 skor silinir." });
     return shuffle(deck);
 }
 
@@ -85,10 +85,10 @@ function createCenterDeck() {
         for (let i = 0; i < 2; i++) deck.push({ type: "POWER", value: 3, color, cost: 2 });
         deck.push({ type: "POWER", value: 4, color, cost: 3 });
     });
-    for (let i = 0; i < 6; i++) deck.push({ type: "CANCEL",        cost: 0 });
-    for (let i = 0; i < 4; i++) deck.push({ type: "REDUCE",        cost: 2 });
+    for (let i = 0; i < 6; i++) deck.push({ type: "CANCEL", cost: 0 });
+    for (let i = 0; i < 4; i++) deck.push({ type: "REDUCE", cost: 2 });
     for (let i = 0; i < 2; i++) deck.push({ type: "CHANGE_TARGET", cost: 3 });
-    for (let i = 0; i < 2; i++) deck.push({ type: "REFRESH",       cost: 1 });
+    for (let i = 0; i < 2; i++) deck.push({ type: "REFRESH", cost: 1 });
     return shuffle(deck);
 }
 
@@ -97,6 +97,7 @@ function createPlayer(socketId, name) {
         id: socketId,
         name,
         role: null,
+        selectedRole: null,
         score: 0,
         energy: 3,
         hand: [],
@@ -163,6 +164,7 @@ function getPublicState() {
             score: p.score,
             energy: p.energy,
             role: p.role,
+            selectedRole: p.selectedRole,
             handCount: p.hand.length,
             actedThisTurn: p.actedThisTurn
         })),
@@ -181,8 +183,9 @@ function getPublicState() {
                 type: gameState.activeReaction.type,
                 forSocketId: gameState.activeReaction.forSocketId,
                 startedAt: gameState.activeReaction.startedAt,
-                timeoutMs: REACTION_TIMEOUT_MS
-              }
+                timeoutMs: REACTION_TIMEOUT_MS,
+                customData: gameState.activeReaction.customData
+            }
             : null,
         pendingCancel: null,
         lastPlayedCard: gameState.lastPlayedCard
@@ -203,7 +206,7 @@ function broadcastState() {
 // ─────────────────────────────────────────────
 //  REACTION SYSTEM
 // ─────────────────────────────────────────────
-function startReaction(type, forSocketId, onResolve) {
+function startReaction(type, forSocketId, onResolve, customData = null) {
     clearReaction();
 
     const reaction = {
@@ -211,7 +214,8 @@ function startReaction(type, forSocketId, onResolve) {
         forSocketId,
         startedAt: Date.now(),
         resolve: onResolve,
-        timer: null
+        timer: null,
+        customData
     };
 
     reaction.timer = setTimeout(() => {
@@ -246,9 +250,10 @@ function clearReaction() {
 
 function resolveReaction(decision) {
     if (!gameState.activeReaction) return;
-    const cb = gameState.activeReaction.resolve;
+    const reaction = gameState.activeReaction;
+    const cb = reaction.resolve;
     clearReaction();
-    cb(decision);
+    cb(decision, reaction);
     broadcastState();
 }
 
@@ -265,14 +270,14 @@ function revealTarget() {
     const nextTarget = gameState.targetDeck[gameState.targetDeck.length - 1];
     const role3 = findRole("ROLE_3");
 
-    if (role3 && gameState.role3UsesThisTurn < 2) {
+    if (role3 && gameState.role3UsesThisTurn < 2 && role3.energy >= 1) {
         startReaction("ROLE3_PEEK", role3.id, (decision) => {
             if (decision === "look_and_pay") {
                 if (role3.energy >= 1) {
                     role3.energy--;
                     gameState.role3UsesThisTurn++;
                     io.to(role3.id).emit("role3Peek", { target: nextTarget });
-                    
+
                     startReaction("ROLE3_CHANGE", role3.id, (dec2) => {
                         if (dec2 === "change" && gameState.role3UsesThisTurn < 2) {
                             gameState.role3UsesThisTurn++;
@@ -332,15 +337,16 @@ function resolveTarget() {
     const role5 = findRole("ROLE_5");
 
     if (role5 && role5.id !== winner.id && gameState.role5UsesTotal < 3 && role5.hand.length > 0) {
-        startReaction("ROLE5_STEAL", role5.id, (decision) => {
-            continueResolveTarget(target, winner);
+        startReaction("ROLE5_STEAL", role5.id, (decision, rx) => {
+            const penalty = (decision === "throw" && rx) ? (rx.penalty || 0) : 0;
+            continueResolveTarget(target, winner, penalty);
         });
     } else {
-        continueResolveTarget(target, winner);
+        continueResolveTarget(target, winner, 0);
     }
 }
 
-function continueResolveTarget(target, winner) {
+function continueResolveTarget(target, winner, penalty = 0) {
     if (target.type === "SPECIAL_X") {
         const rivals = gameState.players.filter(p => p.id !== winner.id);
         if (rivals.length > 0) {
@@ -359,9 +365,10 @@ function continueResolveTarget(target, winner) {
             finalizeResolveTarget(target, winner);
         }
     } else if (target.type === "SPECIAL_Y") {
-        winner.score += 5;
+        let reward = Math.max(0, 5 - penalty);
+        winner.score += reward;
         gameState.players.forEach(p => { if (p.id !== winner.id) p.score = Math.max(0, p.score - 5); });
-        gameState.hudMessage = `${winner.name} ÖZEL-Y: +5, diğerleri -5!`;
+        gameState.hudMessage = `${winner.name} ÖZEL-Y: +${reward} (Rol 5 Cezası: -${penalty}), diğerleri -5!`;
         finalizeResolveTarget(target, winner);
     } else {
         let reward = target.reward || 10;
@@ -378,8 +385,13 @@ function continueResolveTarget(target, winner) {
         if (hasSynergy) {
             reward += 2; // Sinerji Bonusu
         }
-        winner.score += reward;
-        gameState.hudMessage = `${winner.name} hedefi çözdü! ${hasSynergy ? '(SİNERJİ BONUSU!) ' : ''}+${reward}`;
+        let finalReward = Math.max(0, reward - penalty);
+        winner.score += finalReward;
+        if (penalty > 0) {
+            gameState.hudMessage = `${winner.name} hedefi çözdü! +${finalReward} (Rol 5 Cezası: -${penalty})${hasSynergy ? ' (SİNERJİ BONUSU!)' : ''}`;
+        } else {
+            gameState.hudMessage = `${winner.name} hedefi çözdü! ${hasSynergy ? '(SİNERJİ BONUSU!) ' : ''}+${reward}`;
+        }
         finalizeResolveTarget(target, winner);
     }
 }
@@ -603,11 +615,9 @@ function revertLastPlayedCard() {
     else if (revertData.type === "REDUCE") {
         const di = gameState.discardPile.indexOf(card);
         if (di !== -1) gameState.discardPile.splice(di, 1);
-        
-        if (revertData.removedCard) {
-            gameState.agendaPile.push(revertData.removedCard);
-            const rdi = gameState.discardPile.indexOf(revertData.removedCard);
-            if (rdi !== -1) gameState.discardPile.splice(rdi, 1);
+
+        if (revertData.targetCard) {
+            revertData.targetCard.power = revertData.originalPower;
         }
     }
     else if (revertData.type === "CHANGE_TARGET") {
@@ -615,7 +625,7 @@ function revertLastPlayedCard() {
         if (di !== -1) gameState.discardPile.splice(di, 1);
 
         if (gameState.currentTarget) {
-            gameState.targetDeck.shift(); 
+            gameState.targetDeck.shift();
         }
         gameState.currentTarget = revertData.prevTarget;
         gameState.agendaPile = revertData.prevAgenda;
@@ -627,6 +637,7 @@ function revertLastPlayedCard() {
         if (player) {
             player.hand.forEach(c => gameState.discardPile.push(c));
             player.hand = revertData.prevHand;
+            player.skipDraw = false;
         }
     }
 }
@@ -652,23 +663,21 @@ function executeCardPlayDirect(player, card) {
         gameState.agendaPile.push({ ...card, owner: player.id, power, thisRound: true });
         player.playedToAgendaThisTurn = true;
         gameState.hudMessage = `${player.name} güç kartı oynadı (Güç: ${power})`;
-        
+
         revertData = { type: "POWER" };
-        
-        checkTargetSolved();
     }
     else if (card.type === "REDUCE") {
-        let removed = null;
+        let targetCard = null;
+        let originalPower = 0;
         if (gameState.agendaPile.length > 0) {
-            removed = gameState.agendaPile.pop();
-            gameState.discardPile.push(removed);
-            triggerRole4Reaction(removed);
-        } else {
-            triggerRole4Reaction(card);
+            targetCard = gameState.agendaPile[gameState.agendaPile.length - 1];
+            originalPower = targetCard.power;
+            targetCard.power = 0;
         }
         gameState.discardPile.push(card);
+        triggerRole4Reaction(card);
 
-        revertData = { type: "REDUCE", removedCard: removed };
+        revertData = { type: "REDUCE", targetCard, originalPower };
         gameState.hudMessage = `${player.name} sabotaj kartı oynadı.`;
     }
     else if (card.type === "CHANGE_TARGET") {
@@ -694,6 +703,7 @@ function executeCardPlayDirect(player, card) {
         player.hand = [];
         drawCards(player, 5);
         triggerRole4Reaction(card);
+        player.skipDraw = true;
 
         revertData = { type: "REFRESH", prevHand };
         gameState.hudMessage = `${player.name} fonlama yaptı.`;
@@ -704,11 +714,15 @@ function executeCardPlayDirect(player, card) {
         card: card,
         revertData: revertData
     };
+
+    if (card.type === "POWER") {
+        checkTargetSolved();
+    }
 }
 
 function startCancelDuelCheck() {
     cancelCandidates = gameState.players.filter(p => p.id !== lastCancellerId && p.hand.some(c => c.type === "CANCEL"));
-    
+
     const activePlayer = currentPlayer();
     cancelCandidates.sort((a, b) => {
         if (a.id === activePlayer.id) return -1;
@@ -769,7 +783,7 @@ function playCounterCancelCard(candidate) {
 
 function resolveCancelDuelResult() {
     const isCancelled = (cancelCount % 2 === 1);
-    
+
     if (isCancelled) {
         if (gameState.lastPlayedCard) {
             gameState.hudMessage = `${currentPlayer().name}'in oynadığı kart İPTAL edildi!`;
@@ -778,7 +792,7 @@ function resolveCancelDuelResult() {
     } else {
         gameState.hudMessage = `İptal zinciri sonuçsuz kaldı! Kart korundu.`;
     }
-    
+
     gameState.lastPlayedCard = null;
     broadcastState();
 }
@@ -822,9 +836,11 @@ function startGame() {
     gameState.specialYTurnLimit = null;
 
     shuffle(gameState.players);
-    const shuffledRoles = shuffle([...ROLES]).slice(0, gameState.players.length);
-    gameState.players.forEach((p, index) => {
-        p.role = shuffledRoles[index] || null;
+    const availableRoles = ROLES.filter(r => !gameState.players.some(p => p.selectedRole === r));
+    shuffle(availableRoles);
+
+    gameState.players.forEach(p => {
+        p.role = p.selectedRole || availableRoles.pop() || null;
         p.score = 0;
         p.energy = 3;
         p.hand = [];
@@ -861,6 +877,26 @@ io.on("connection", (socket) => {
         if (!gameState.started && gameState.players.length >= 2) startGame();
     });
 
+    socket.on("selectRole", (role) => {
+        if (gameState.started) return;
+        const player = findPlayer(socket.id);
+        if (!player) return;
+
+        if (role === null) {
+            player.selectedRole = null;
+            broadcastState();
+            return;
+        }
+
+        if (!ROLES.includes(role)) return;
+
+        const isTaken = gameState.players.some(p => p.id !== player.id && p.selectedRole === role);
+        if (isTaken) return;
+
+        player.selectedRole = role;
+        broadcastState();
+    });
+
 
 
 
@@ -876,6 +912,7 @@ io.on("connection", (socket) => {
 
         gameState.players.forEach(p => {
             p.role = null;
+            p.selectedRole = null;
             p.score = 0;
             p.energy = 3;
             p.hand = [];
@@ -898,7 +935,7 @@ io.on("connection", (socket) => {
 
 
     socket.on("playCard", (cardIndex) => {
-        if (!gameState.started || gameState.activeReaction) return;
+        if (!gameState.started || (gameState.activeReaction && gameState.activeReaction.type !== "ROLE4_SALVAGE")) return;
         const player = findPlayer(socket.id);
         if (!player) return;
 
@@ -911,6 +948,16 @@ io.on("connection", (socket) => {
         // Only active player can play non-CANCEL cards
         const isCurrent = player.id === currentPlayer().id;
         if (!isCurrent) return;
+
+        if (card.type === "REDUCE") {
+            if (agendaPower() <= 0) {
+                return;
+            }
+            const agenda = gameState.agendaPile;
+            if (agenda && agenda.length > 0 && agenda[agenda.length - 1].owner === player.id) {
+                return;
+            }
+        }
 
         let effectiveCost = card.cost;
         if (player.role === "ROLE_1" && card.type !== "POWER" && !player.usedBlackDiscount) {
@@ -935,7 +982,7 @@ io.on("connection", (socket) => {
     });
 
     socket.on("playCancel", (cardIndex) => {
-        if (!gameState.started || gameState.activeReaction) return;
+        if (!gameState.started || (gameState.activeReaction && gameState.activeReaction.type !== "ROLE4_SALVAGE")) return;
         const player = findPlayer(socket.id);
         if (!player) return;
 
@@ -943,8 +990,11 @@ io.on("connection", (socket) => {
         if (!card || card.type !== "CANCEL") return;
 
         if (!gameState.lastPlayedCard) return;
+        const lastCard = gameState.lastPlayedCard.card;
+        if (lastCard.type === "POWER" && gameState.agendaPile.length === 0) return;
+
         const activePlayer = currentPlayer();
-        if (player.id === activePlayer.id) return; 
+        if (player.id === activePlayer.id) return;
         if (gameState.lastPlayedCard.playerId !== activePlayer.id) return;
 
         player.hand.splice(cardIndex, 1);
@@ -984,7 +1034,7 @@ io.on("connection", (socket) => {
     });
 
     socket.on("maneuver", (cardIndex) => {
-        if (!gameState.started || gameState.activeReaction || currentPlayer().id !== socket.id || currentPlayer().energy < 1 || currentPlayer().actedThisTurn) return;
+        if (!gameState.started || (gameState.activeReaction && gameState.activeReaction.type !== "ROLE4_SALVAGE") || currentPlayer().id !== socket.id || currentPlayer().energy < 1 || currentPlayer().actedThisTurn) return;
         const player = currentPlayer();
         const card = player.hand[cardIndex];
         if (!card) return;
@@ -1034,7 +1084,7 @@ io.on("connection", (socket) => {
     });
 
     socket.on("endTurn", () => {
-        if (!gameState.started || gameState.activeReaction) return;
+        if (!gameState.started || (gameState.activeReaction && gameState.activeReaction.type !== "ROLE4_SALVAGE")) return;
         const player = currentPlayer();
         if (player.id !== socket.id || !player.actedThisTurn) return;
 
@@ -1056,17 +1106,21 @@ io.on("connection", (socket) => {
 
         if (gameState.activeReaction.type === "ROLE5_STEAL" && decision === "throw") {
             const role5 = findPlayer(socket.id);
-            if (role5 && typeof cardIndex === "number" && role5.hand[cardIndex]) {
-                const card = role5.hand[cardIndex];
-                const lastCard = gameState.agendaPile[gameState.agendaPile.length - 1];
-                const winner = lastCard ? findPlayer(lastCard.owner) : null;
-                if (winner) {
-                    winner.score = Math.max(0, winner.score - (card.cost || 0));
-                }
-                role5.hand.splice(cardIndex, 1);
+            const idx = parseInt(cardIndex);
+            console.log(`[ROLE5_STEAL] Player ${role5 ? role5.name : "Unknown"} throwing card at index ${cardIndex} (parsed as ${idx})`);
+            if (role5 && !isNaN(idx) && role5.hand[idx]) {
+                const card = role5.hand[idx];
+                gameState.activeReaction.penalty = card.cost !== undefined ? card.cost : 0;
+                console.log(`[ROLE5_STEAL] Card: ${card.type}, Cost: ${card.cost}, Penalty set to: ${gameState.activeReaction.penalty}`);
+                role5.hand.splice(idx, 1);
                 gameState.discardPile.push(card);
-                triggerRole4Reaction(card);
                 gameState.role5UsesTotal++;
+                
+                resolveReaction(decision);
+                triggerRole4Reaction(card);
+                return;
+            } else {
+                console.log(`[ROLE5_STEAL] Error: Card not found or invalid index for player ${role5 ? role5.name : "Unknown"}`);
             }
         }
         resolveReaction(decision);
@@ -1117,7 +1171,7 @@ function triggerRole4Reaction(discardedCard) {
             const di = gameState.discardPile.findIndex(c => c === discardedCard);
             if (di !== -1) gameState.discardPile.splice(di, 1);
         }
-        
+
         // Restore turn to the player who was active when reaction was triggered, only if the turn hasn't transitioned
         if (gameState.players[gameState.currentPlayerIndex] && gameState.players[gameState.currentPlayerIndex].id === originalPlayerId) {
             const pIdx = gameState.players.findIndex(p => p.id === originalPlayerId);
@@ -1127,7 +1181,7 @@ function triggerRole4Reaction(discardedCard) {
         }
 
         broadcastState();
-    });
+    }, { cardName: getCardNameTurkish(discardedCard) });
 }
 
 server.listen(PORT, () => {

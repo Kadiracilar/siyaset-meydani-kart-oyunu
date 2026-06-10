@@ -241,7 +241,7 @@ body::before {
 .card:hover { transform: translateY(-6px) scale(1.05); z-index: 10; }
 .card.selected { border-color: var(--accent); box-shadow: 0 0 16px var(--accent); transform: translateY(-10px); }
 .card.playable:hover { box-shadow: 0 0 12px rgba(0,229,255,.4); border-color: rgba(0,229,255,.5); }
-.card.unplayable { opacity: .45; cursor: not-allowed; }
+.card.unplayable { opacity: .45; cursor: not-allowed; pointer-events: none; }
 
 .card .cv { font-family: var(--font-head); font-size: 32px; line-height: 1; }
 .card .cc { font-family: var(--font-mono); font-size: 10px; }
@@ -451,21 +451,34 @@ body::before {
 <!-- ── LOBBY SCREEN ── -->
 <div id="lobbyScreen" class="screen hidden">
   <div class="lobby-title">OYUN LOBİSİ</div>
-  <div style="display: flex; gap: 40px; align-items: flex-start; justify-content: center; width: 90%; max-width: 900px; margin-top: 20px;">
-    <!-- Active Players -->
-    <div style="flex: 1; display: flex; flex-direction: column; gap: 15px; align-items: center; background: var(--surface); border: 1px solid var(--border); padding: 20px; border-radius: 8px; box-shadow: var(--glow);">
-      <div class="tz-label" style="font-size: 16px; font-weight: 700; color: var(--accent); letter-spacing: 2px;">BAĞLI OYUNCULAR</div>
-      <div id="playerList" style="min-height: 80px; display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;"></div>
-      <div class="lobby-info" id="lobbyInfo">0 / 6 Oyuncu Bağlı</div>
-      <button class="btn btn-primary" id="startBtn" disabled style="margin-top: 10px; width: 100%;">OYUNU BAŞLAT</button>
-    </div>
-    <!-- Scoreboard (Parti Tablosu) -->
-    <div style="flex: 1; display: flex; flex-direction: column; gap: 15px; background: var(--surface); border: 1px solid var(--border); padding: 20px; border-radius: 8px; height: 260px; overflow: hidden;">
-      <div class="tz-label" style="font-size: 16px; font-weight: 700; color: var(--accent3); letter-spacing: 2px; text-align: center;">PARTİ SKOR TABLOSU (50+1)</div>
-      <div id="scoreboardList" class="scroll" style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
-        <div style="text-align: center; color: var(--text-dim); font-size: 14px; margin-top: 40px;">Henüz tamamlanan parti yok.</div>
+  <div style="display: flex; gap: 30px; align-items: flex-start; justify-content: center; width: 95%; max-width: 1150px; margin-top: 20px;">
+    
+    <!-- Left Column: Players & Scoreboard -->
+    <div style="flex: 1; display: flex; flex-direction: column; gap: 20px; width: 100%;">
+      <!-- Active Players -->
+      <div style="display: flex; flex-direction: column; gap: 15px; align-items: center; background: var(--surface); border: 1px solid var(--border); padding: 20px; border-radius: 8px; box-shadow: var(--glow);">
+        <div class="tz-label" style="font-size: 16px; font-weight: 700; color: var(--accent); letter-spacing: 2px;">BAĞLI OYUNCULAR</div>
+        <div id="playerList" style="min-height: 80px; display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;"></div>
+        <div class="lobby-info" id="lobbyInfo">0 / 6 Oyuncu Bağlı</div>
+        <button class="btn btn-primary" id="startBtn" disabled style="margin-top: 10px; width: 100%;">OYUNU BAŞLAT</button>
+      </div>
+      <!-- Scoreboard (Parti Tablosu) -->
+      <div style="display: flex; flex-direction: column; gap: 15px; background: var(--surface); border: 1px solid var(--border); padding: 20px; border-radius: 8px; height: 200px; overflow: hidden;">
+        <div class="tz-label" style="font-size: 15px; font-weight: 700; color: var(--accent3); letter-spacing: 2px; text-align: center;">PARTİ SKOR TABLOSU (50+1)</div>
+        <div id="scoreboardList" class="scroll" style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
+          <div style="text-align: center; color: var(--text-dim); font-size: 14px; margin-top: 40px;">Henüz tamamlanan parti yok.</div>
+        </div>
       </div>
     </div>
+
+    <!-- Right Column: Role Selection Panel -->
+    <div style="flex: 1.2; display: flex; flex-direction: column; gap: 15px; background: var(--surface); border: 1px solid var(--border); padding: 20px; border-radius: 8px; box-shadow: var(--glow); min-width: 450px;">
+      <div class="tz-label" style="font-size: 16px; font-weight: 700; color: var(--accent2); letter-spacing: 2px; text-align: center;">ROLÜNÜ SEÇ (İSTEĞE BAĞLI)</div>
+      <div id="lobbyRoleList" class="scroll" style="display: flex; flex-direction: column; gap: 10px; max-height: 400px; overflow-y: auto; padding-right: 5px;">
+        <!-- Roles will be dynamically populated here -->
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -499,6 +512,7 @@ body::before {
         <div id="targetCard">
           <div id="targetName">—</div>
         </div>
+        <div id="targetDesc" style="font-size: 13px; color: var(--accent3); margin-top: 4px; text-align: center; max-width: 280px; min-height: 18px; font-family: var(--font-mono);"></div>
         <div class="prog-wrap">
           <div class="prog-bar" id="progBar" style="width: 0%"></div>
         </div>

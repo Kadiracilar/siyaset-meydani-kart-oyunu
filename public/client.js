@@ -11,24 +11,24 @@ let maneuverMode = false;
 
 const $ = id => document.getElementById(id);
 const screens = {
-    login:  $("loginScreen"),
-    lobby:  $("lobbyScreen"),
-    game:   $("gameScreen")
+    login: $("loginScreen"),
+    lobby: $("lobbyScreen"),
+    game: $("gameScreen")
 };
 
 function showScreen(name) {
     Object.values(screens).forEach(s => {
-        if(s) s.classList.add("hidden");
+        if (s) s.classList.add("hidden");
     });
-    if(screens[name]) screens[name].classList.remove("hidden");
+    if (screens[name]) screens[name].classList.remove("hidden");
 }
 
 const CARD_INFO = {
-    POWER:         { label: "GÜÇ KARTI",      desc: "Gündem havuzuna güç ekler. Renk uyumundaysa +1 bonus güç kazanır." },
-    CANCEL:        { label: "İPTAL (NOPE)",    desc: "Anlık oynanır. Rakibin kartını iptal eder. Atan gelecek el -1 enerji penaltısı alır." },
-    REDUCE:        { label: "AZALT (SABOTAJ)", desc: "Gündem havuzundan son kartı çöpe atar." },
-    CHANGE_TARGET: { label: "HEDEF DEĞİŞTİR",  desc: "Mevcut hedefi iptal edip desteye karıştırır, yeni hedef açar." },
-    REFRESH:       { label: "YENİLE (FONLAMA)",desc: "Elinizdeki tüm kartları çöpe atıp 5 yeni kart çekersiniz." },
+    POWER: { label: "GÜÇ KARTI", desc: "Gündem havuzuna güç ekler. Renk uyumundaysa +1 bonus güç kazanır." },
+    CANCEL: { label: "İPTAL (NOPE)", desc: "Anlık oynanır. Rakibin kartını iptal eder. Atan gelecek el -1 enerji penaltısı alır." },
+    REDUCE: { label: "AZALT (SABOTAJ)", desc: "Gündem havuzundaki son kartın gücünü sıfırlar (kartı çöpe atmaz)." },
+    CHANGE_TARGET: { label: "HEDEF DEĞİŞTİR", desc: "Mevcut hedefi iptal edip desteye karıştırır, yeni hedef açar." },
+    REFRESH: { label: "YENİLE (FONLAMA)", desc: "Elinizdeki tüm kartları çöpe atıp 5 yeni kart çekersiniz." },
 };
 
 const ROLE_INFO = {
@@ -45,8 +45,8 @@ const ROLE_DETAILS = {
     ROLE_2: { name: "Araştırmacı Gazeteci", color: "Kırmızı", cssColor: "#ff4757", desc: "İptal (Nope) kartına müdahale edebilir. Müdahale ederse atan kart kaybeder, kendisi sonraki turuna 2 enerjiyle başlar. Mavi hedefleri başkası çözerse -2 skor kaybeder." },
     ROLE_3: { name: "Anchorman / Medya Patronu", color: "Mavi", cssColor: "#1e90ff", desc: "Açılacak hedefe 1 enerjiyle gizlice bakabilir, karıştırabilir. Tur boyunca ortadaki gündeme kart oynamazsa pasiflikten -1 skor kaybeder." },
     ROLE_4: { name: "Troll Başı / Hesap Sahibi", color: "Mavi", cssColor: "#1e90ff", desc: "Çöpe düşen kartı rakiplerin sırasındayken 1 enerjiye eline alabilir. Turda kart almadıysa/manevra yapmadıysa tur sonu 1 kart çeker. Kırmızı hedeflerde uyumsuz renkli kart oynarsa gücü 1 azalır." },
-    ROLE_5: { name: "Aktivist Sanatçı / Muhalif Blok", color: "Sarı", cssColor: "#ffd32a", desc: "Rakip hedef çözünce elinden kart fırlatıp kartın maliyeti kadar rakibin skorunu düşürür. Kırmızı hedeflerde güç kartı gücü 1 azalır." },
-    ROLE_6: { name: "Kaos Teorisyeni", color: "Sarı", cssColor: "#ffd32a", desc: "1 değerli kartları +1 uyum bonusu alır ama maliyeti +1 enerji artar. Rakip kırmızı hedef çözerse -2 skor kaybeder." }
+    ROLE_5: { name: "Aktivist Sanatçı / Muhalif Blok", color: "Sarı", cssColor: "#ffd32a", desc: "Rakip hedef çözünce elinden kart fırlatıp kartın maliyeti kadar rakibin skorunu düşürür. Kırmızı hedeflerde bir parti boyunca iki defaya mahsus oynadığı kartlar -1 güç alır." },
+    ROLE_6: { name: "Kaos Teorisyeni", color: "Sarı", cssColor: "#ffd32a", desc: "1 değerli kartları +1 uyum bonusu alır ama maliyeti +1 enerji artar. Eğer rakip bir hedefi kırmızı kart ile çözerse -2 puan kaybedersin." }
 };
 
 if ($("joinBtn")) {
@@ -110,6 +110,10 @@ socket.on("reactionTick", ({ remaining }) => {
     if ($("cntBar")) $("cntBar").style.width = ((remaining / 10) * 100) + "%";
 });
 
+window.selectLobbyRole = (role) => {
+    socket.emit("selectRole", role);
+};
+
 function renderLobby(state) {
     const list = $("playerList");
     if (!list) return;
@@ -117,11 +121,65 @@ function renderLobby(state) {
     state.players.forEach(p => {
         const chip = document.createElement("div");
         chip.className = "player-chip";
-        chip.innerHTML = `<span class="dot"></span><span>${p.name}</span>`;
+        const role = p.selectedRole ? ROLE_DETAILS[p.selectedRole] : null;
+        if (role) {
+            chip.innerHTML = `<span class="dot" style="background: ${role.cssColor}"></span><span>${p.name} (${role.name})</span>`;
+            chip.style.borderColor = role.cssColor;
+        } else {
+            chip.innerHTML = `<span class="dot"></span><span>${p.name}</span>`;
+        }
         list.appendChild(chip);
     });
     if ($("lobbyInfo")) $("lobbyInfo").textContent = `${state.players.length} / 6 Oyuncu Bağlı`;
     if ($("startBtn")) $("startBtn").disabled = state.players.length < 2;
+
+    const lobbyRoleList = $("lobbyRoleList");
+    if (lobbyRoleList) {
+        lobbyRoleList.innerHTML = "";
+        const me = state.players.find(p => p.id === myId);
+
+        Object.keys(ROLE_DETAILS).forEach(roleKey => {
+            const role = ROLE_DETAILS[roleKey];
+            const item = document.createElement("div");
+            item.style.display = "flex";
+            item.style.flexDirection = "column";
+            item.style.padding = "10px";
+            item.style.background = "var(--surface2)";
+            item.style.border = "1px solid var(--border)";
+            item.style.borderRadius = "var(--radius)";
+            item.style.gap = "6px";
+
+            const selector = state.players.find(p => p.selectedRole === roleKey);
+            const isMeSelected = selector && selector.id === myId;
+
+            let buttonHTML = "";
+            if (selector) {
+                if (isMeSelected) {
+                    buttonHTML = `<button class="btn btn-ghost" style="padding: 4px 10px; font-size: 12px; margin: 0;" onclick="selectLobbyRole(null)">BIRAK</button>`;
+                    item.style.borderColor = role.cssColor;
+                    item.style.boxShadow = `0 0 8px ${role.cssColor}40`;
+                } else {
+                    buttonHTML = `<span style="font-size: 12px; color: var(--text-dim); font-weight: 600;">Seçen: ${selector.name}</span>`;
+                }
+            } else {
+                const mySelectedRole = me ? me.selectedRole : null;
+                if (mySelectedRole) {
+                    buttonHTML = `<button class="btn btn-primary" disabled style="padding: 4px 10px; font-size: 12px; opacity: 0.5; margin: 0;">SEÇ</button>`;
+                } else {
+                    buttonHTML = `<button class="btn btn-primary" style="padding: 4px 10px; font-size: 12px; background: ${role.cssColor}; border-color: ${role.cssColor}; margin: 0;" onclick="selectLobbyRole('${roleKey}')">SEÇ</button>`;
+                }
+            }
+
+            item.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: ${role.cssColor}; font-weight: 700; font-size: 14px;">${role.name} (${role.color})</span>
+                    ${buttonHTML}
+                </div>
+                <div style="font-size: 11px; color: var(--text-dim); line-height: 1.4;">${role.desc}</div>
+            `;
+            lobbyRoleList.appendChild(item);
+        });
+    }
 
     const scoreList = $("scoreboardList");
     if (scoreList) {
@@ -140,10 +198,10 @@ function renderLobby(state) {
                 row.style.border = "1px solid var(--border)";
                 row.style.borderRadius = "var(--radius)";
                 row.style.fontSize = "14px";
-                
+
                 row.innerHTML = `
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="color: var(--text-dim); font-family: var(--font-mono); font-size: 12px;">#${idx+1}</span>
+                        <span style="color: var(--text-dim); font-family: var(--font-mono); font-size: 12px;">#${idx + 1}</span>
                         <span style="font-weight: 600;">${entry.name}</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px;">
@@ -161,12 +219,12 @@ function renderGame(state) {
     if ($("hudMsg")) $("hudMsg").textContent = state.hudMessage;
     const cp = state.players[state.currentPlayerIndex];
     if ($("turnIndicator")) $("turnIndicator").textContent = cp ? `SIRA: ${cp.name.toUpperCase()}` : "—";
-    
+
     const me = state.players.find(p => p.id === myId);
     if ($("myEnergy")) $("myEnergy").textContent = `⚡ ${me ? me.energy : 3}`;
     if ($("discardCount")) $("discardCount").textContent = state.discardCount;
 
-    if (cp && cp.id === myId && !state.activeReaction) {
+    if (cp && cp.id === myId && (!state.activeReaction || state.activeReaction.type === "ROLE4_SALVAGE")) {
         socket.emit("checkForcedManeuver");
     }
 
@@ -175,16 +233,16 @@ function renderGame(state) {
     renderPlayerList(state);
 
     const isMyTurn = cp?.id === myId;
-    if (!isMyTurn || !!state.activeReaction) {
+    if (!isMyTurn || (state.activeReaction && state.activeReaction.type !== "ROLE4_SALVAGE")) {
         maneuverMode = false;
     }
 
     if ($("endTurnBtn")) {
-        $("endTurnBtn").disabled = !isMyTurn || !!state.activeReaction || !(me && me.actedThisTurn);
+        $("endTurnBtn").disabled = !isMyTurn || (state.activeReaction && state.activeReaction.type !== "ROLE4_SALVAGE") || !(me && me.actedThisTurn);
     }
-    
+
     if ($("maneuverBtn")) {
-        const canManeuver = isMyTurn && !state.activeReaction && me && me.energy >= 1 && me.handCount > 0 && !me.actedThisTurn;
+        const canManeuver = isMyTurn && (!state.activeReaction || state.activeReaction.type === "ROLE4_SALVAGE") && me && me.energy >= 1 && me.handCount > 0 && !me.actedThisTurn;
         $("maneuverBtn").disabled = !canManeuver;
         if (maneuverMode && canManeuver) {
             $("maneuverBtn").style.boxShadow = "0 0 12px var(--accent3)";
@@ -223,10 +281,22 @@ function renderGame(state) {
 
 function renderTarget(state) {
     const t = state.currentTarget;
-    if (!t) return;
+    if (!t) {
+        if ($("targetName")) $("targetName").textContent = "—";
+        if ($("targetDesc")) $("targetDesc").textContent = "";
+        if ($("targetProgress")) $("targetProgress").textContent = "0 / 0";
+        if ($("progBar")) {
+            $("progBar").style.width = "0%";
+            $("progBar").className = "prog-bar";
+        }
+        return;
+    }
     if ($("targetName")) {
         $("targetName").textContent = t.type === "TARGET" ? t.color : t.type;
         $("targetName").className = t.color || t.type;
+    }
+    if ($("targetDesc")) {
+        $("targetDesc").textContent = t.desc || "";
     }
     const power = state.agendaPile.reduce((s, c) => s + c.power, 0);
     if ($("targetProgress")) $("targetProgress").textContent = `${power} / ${t.threshold}`;
@@ -271,12 +341,16 @@ function renderPlayerList(state) {
 
 function canPlayCancel(card) {
     if (card.type !== "CANCEL") return false;
-    if (!gameState || !gameState.started || gameState.activeReaction) return false;
+    if (!gameState || !gameState.started || (gameState.activeReaction && gameState.activeReaction.type !== "ROLE4_SALVAGE")) return false;
 
     if (gameState.lastPlayedCard) {
         const activePlayer = gameState.players[gameState.currentPlayerIndex];
         const isMyTurn = activePlayer && activePlayer.id === myId;
         if (!isMyTurn && gameState.lastPlayedCard.playerId !== myId) {
+            const lastCard = gameState.lastPlayedCard.card;
+            if (lastCard.type === "POWER" && gameState.agendaPile.length === 0) {
+                return false;
+            }
             return true;
         }
     }
@@ -288,7 +362,7 @@ function renderHand() {
     const container = $("handCards");
     if (!container) return;
     container.innerHTML = "";
-    
+
     const me = gameState?.players.find(p => p.id === myId);
     const cp = gameState?.players[gameState?.currentPlayerIndex];
     const isMyTurn = cp?.id === myId;
@@ -298,7 +372,7 @@ function renderHand() {
         wrap.className = "tooltip-wrap";
         const el = document.createElement("div");
         el.className = `card ${card.color || ''} ${card.type}`;
-        
+
         let effectiveCost = card.cost;
         if (me) {
             if (me.role === "ROLE_1" && card.type !== "POWER" && !me.usedBlackDiscount) {
@@ -311,40 +385,50 @@ function renderHand() {
 
         const canAfford = me ? (me.energy >= effectiveCost) : true;
         let isPlayable = false;
-        
-        if (isMyTurn && !gameState?.activeReaction) {
+
+        if (isMyTurn && (!gameState?.activeReaction || gameState?.activeReaction.type === "ROLE4_SALVAGE")) {
             if (maneuverMode) {
                 isPlayable = true;
                 el.style.outline = "3px dashed #ffd32a";
             } else if (canAfford) {
                 isPlayable = true;
+                if (card.type === "REDUCE") {
+                    const agenda = gameState?.agendaPile;
+                    const currentPower = agenda ? agenda.reduce((s, c) => s + c.power, 0) : 0;
+                    if (currentPower <= 0) {
+                        isPlayable = false;
+                    } else if (agenda && agenda.length > 0 && agenda[agenda.length - 1].owner === myId) {
+                        isPlayable = false;
+                    }
+                }
             }
         } else if (canPlayCancel(card)) {
             isPlayable = true;
         }
-        
+
         if (isPlayable) {
             el.classList.add("playable");
         } else {
             el.classList.add("unplayable");
         }
 
-        let cv = card.type === "POWER" ? card.value : card.type.slice(0,6);
+        let cv = card.type === "POWER" ? card.value : card.type.slice(0, 6);
         el.innerHTML = `<div class="cv">${cv}</div><div class="cost-badge">${effectiveCost}</div>`;
-        
+
         const tt = document.createElement("div");
         tt.className = "tooltip-box";
         tt.innerHTML = `<span class="tt-name">${CARD_INFO[card.type]?.label || card.type}</span>${CARD_INFO[card.type]?.desc || ''}`;
-        
+
         wrap.appendChild(el);
         wrap.appendChild(tt);
-        el.addEventListener("click", () => onCardClick(index, card));
+        el.addEventListener("click", () => onCardClick(index, card, el));
         container.appendChild(wrap);
     });
 }
 
-function onCardClick(index, card) {
-    if (gameState?.activeReaction) return;
+function onCardClick(index, card, el) {
+    if (el && el.classList.contains("unplayable")) return;
+    if (gameState?.activeReaction && gameState?.activeReaction.type !== "ROLE4_SALVAGE") return;
 
     if (maneuverMode) {
         socket.emit("maneuver", index);
@@ -358,6 +442,17 @@ function onCardClick(index, card) {
         return;
     }
 
+    if (card.type === "REDUCE") {
+        const agenda = gameState?.agendaPile;
+        const currentPower = agenda ? agenda.reduce((s, c) => s + c.power, 0) : 0;
+        if (currentPower <= 0) {
+            return;
+        }
+        if (agenda && agenda.length > 0 && agenda[agenda.length - 1].owner === myId) {
+            return;
+        }
+    }
+
     socket.emit("playCard", index);
 }
 
@@ -365,7 +460,7 @@ if ($("endTurnBtn")) $("endTurnBtn").addEventListener("click", () => socket.emit
 
 if ($("maneuverBtn")) {
     $("maneuverBtn").addEventListener("click", () => {
-        if (!gameState?.started || gameState?.activeReaction) return;
+        if (!gameState?.started || (gameState?.activeReaction && gameState?.activeReaction.type !== "ROLE4_SALVAGE")) return;
         const cp = gameState?.players[gameState?.currentPlayerIndex];
         const me = gameState?.players.find(p => p.id === myId);
         if (cp?.id !== myId || !me || me.energy < 1 || me.handCount === 0 || me.actedThisTurn) return;
@@ -376,12 +471,12 @@ if ($("maneuverBtn")) {
 }
 
 const REACTION_CONFIG = {
-    ROLE2_CANCEL: { title: "ROL 2: NOPE REAKSİYONU", desc: "Mühür basarak iptal kartını bozabilir ve elini büyütebilirsin.", btns: [{l:"MÜHÜRLE", d:"accept"}, {l:"PAS", d:"pass"}] },
-    CANCEL_COUNTER: { title: "İPTAL DÜELLOSU: NOPE!", desc: "Rakibin iptal kartına elindeki CANCEL kartıyla karşı koymak ister misin?", btns: [{l:"KARŞI KOY", d:"accept"}, {l:"PAS", d:"pass"}] },
-    ROLE3_PEEK: { title: "ROL 3: ÖNGÖRÜ", desc: "1 Enerji harcayarak sıradaki gizli hedefi incelemek ister misin?", btns: [{l:"BAK (1 ⚡)", d:"look_and_pay"}, {l:"PAS", d:"pass"}] },
-    ROLE3_CHANGE: { title: "ROL 3: SABOTAJ", desc: "Baktığın hedefi desteye geri karıp değiştirmek ister misin?", btns: [{l:"DEĞİŞTİR", d:"change"}, {l:"PAS", d:"pass"}] },
-    ROLE4_SALVAGE: { title: "ROL 4: GERİ KAZANIM", desc: "Çöpe düşen bu kartı 1 enerji karşılığında eline almak ister misin?", btns: [{l:"KARTI AL (1 ⚡)", d:"take"}, {l:"PAS", d:"pass"}] },
-    ROLE5_STEAL: { title: "ROL 5: SKOR BLOKAJI", desc: "Rakip çözdü! Kart fırlatarak kazandığı skoru baltalamak ister misin?", btns: [{l:"PAS GEÇ", d:"pass"}], role5: true },
+    ROLE2_CANCEL: { title: "ROL 2: NOPE REAKSİYONU", desc: "Mühür basarak iptal kartını bozabilir ve elini büyütebilirsin.", btns: [{ l: "MÜHÜRLE", d: "accept" }, { l: "PAS", d: "pass" }] },
+    CANCEL_COUNTER: { title: "İPTAL DÜELLOSU: NOPE!", desc: "Rakibin iptal kartına elindeki CANCEL kartıyla karşı koymak ister misin?", btns: [{ l: "KARŞI KOY", d: "accept" }, { l: "PAS", d: "pass" }] },
+    ROLE3_PEEK: { title: "ROL 3: ÖNGÖRÜ", desc: "1 Enerji harcayarak sıradaki gizli hedefi incelemek ister misin?", btns: [{ l: "BAK (1 ⚡)", d: "look_and_pay" }, { l: "PAS", d: "pass" }] },
+    ROLE3_CHANGE: { title: "ROL 3: SABOTAJ", desc: "Baktığın hedefi desteye geri karıp değiştirmek ister misin?", btns: [{ l: "DEĞİŞTİR", d: "change" }, { l: "PAS", d: "pass" }] },
+    ROLE4_SALVAGE: { title: "ROL 4: GERİ KAZANIM", desc: "Çöpe düşen bu kartı 1 enerji karşılığında eline almak ister misin?", btns: [{ l: "KARTI AL (1 ⚡)", d: "take" }, { l: "PAS", d: "pass" }] },
+    ROLE5_STEAL: { title: "ROL 5: SKOR BLOKAJI", desc: "Rakip çözdü! Kart fırlatarak kazandığı skoru baltalamak ister misin?", btns: [{ l: "PAS GEÇ", d: "pass" }], role5: true },
     SPECIAL_X_CHOOSE: { title: "SIRA DIŞI DURUM X: RAKİP SEÇ", desc: "10 puanını sileceğiniz rakibinizi seçiniz.", btns: [] }
 };
 
@@ -394,6 +489,9 @@ function openReactionModal(reaction) {
     if (reaction.type === "ROLE3_CHANGE" && role3PeekedTarget) {
         const typeLabel = role3PeekedTarget.type === "TARGET" ? role3PeekedTarget.color : role3PeekedTarget.type;
         desc = `Baktığın Hedef: ${typeLabel} (Baraj: ${role3PeekedTarget.threshold}). ${desc}`;
+    }
+    if (reaction.type === "ROLE4_SALVAGE" && reaction.customData && reaction.customData.cardName) {
+        desc = `Çöpe düşen [${reaction.customData.cardName}] kartını 1 enerji karşılığında eline almak ister misin?`;
     }
     if ($("reactionDesc")) $("reactionDesc").textContent = desc;
     if ($("reactionBtns")) $("reactionBtns").innerHTML = "";
@@ -426,19 +524,20 @@ function openReactionModal(reaction) {
         myHand.forEach((card, i) => {
             const btn = document.createElement("button");
             btn.className = "btn btn-danger";
-            
-            let effectiveCost = card.cost;
+
+            let effectiveCost = card.cost !== undefined ? card.cost : 0;
             if (me) {
                 if (me.role === "ROLE_6" && card.type === "POWER" && card.value === 1) {
                     effectiveCost += 1;
                 }
             }
-            btn.textContent = `At: ${card.type} (Cost: ${effectiveCost})`;
-            
-            if (me && me.energy < effectiveCost) {
-                btn.disabled = true;
-                btn.className = "btn btn-ghost";
+            let cardName = card.type;
+            if (card.type === "POWER") {
+                cardName = `${card.color} ${card.value} Güç`;
+            } else if (CARD_INFO[card.type]) {
+                cardName = CARD_INFO[card.type].label;
             }
+            btn.textContent = `Fırlat: ${cardName} (Maliyet/Ceza: ${effectiveCost} ⚡)`;
 
             btn.addEventListener("click", () => {
                 socket.emit("reactionResponse", { decision: "throw", cardIndex: i });
