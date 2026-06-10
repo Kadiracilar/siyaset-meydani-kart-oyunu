@@ -897,6 +897,35 @@ io.on("connection", (socket) => {
         broadcastState();
     });
 
+    socket.on("returnToLobby", () => {
+        if (!gameState.started) return;
+
+        gameState.started = false;
+        gameState.evacuationMode = false;
+        gameState.evacuationTriggerCause = null;
+        gameState.agendaPile = [];
+        gameState.discardPile = [];
+        gameState.currentTarget = null;
+        gameState.lastPlayedCard = null;
+        gameState.activeReaction = null;
+
+        gameState.players.forEach(p => {
+            p.role = null;
+            p.score = 0;
+            p.energy = 3;
+            p.hand = [];
+            p.skipDraw = false;
+            p.cancelPenalty = false;
+            p.actedThisTurn = false;
+            p.usedBlackDiscount = false;
+            p.playedToAgendaThisTurn = false;
+            p.role4DrawnThisRound = false;
+        });
+
+        gameState.hudMessage = "Oyun sonlandırıldı. Lobiye dönüldü.";
+        broadcastState();
+    });
+
 
 
 

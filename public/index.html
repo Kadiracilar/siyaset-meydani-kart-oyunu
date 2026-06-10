@@ -461,6 +461,7 @@ body::before {
         <div id="playerList" style="min-height: 80px; display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;"></div>
         <div class="lobby-info" id="lobbyInfo">0 / 6 Oyuncu Bağlı</div>
         <button class="btn btn-primary" id="startBtn" disabled style="margin-top: 10px; width: 100%;">OYUNU BAŞLAT</button>
+        <button class="btn btn-ghost" id="exitBtn" style="margin-top: 5px; width: 100%; border-color: rgba(255,71,87,.4); color: var(--red-card);">ÇIKIŞ YAP</button>
       </div>
       <!-- Scoreboard (Parti Tablosu) -->
       <div style="display: flex; flex-direction: column; gap: 15px; background: var(--surface); border: 1px solid var(--border); padding: 20px; border-radius: 8px; height: 200px; overflow: hidden;">
@@ -473,8 +474,9 @@ body::before {
 
     <!-- Right Column: Role Selection Panel -->
     <div style="flex: 1.2; display: flex; flex-direction: column; gap: 15px; background: var(--surface); border: 1px solid var(--border); padding: 20px; border-radius: 8px; box-shadow: var(--glow); min-width: 450px;">
+      <button class="btn btn-primary" id="lobbyRulesBtn" style="width: 100%; font-size: 13px; letter-spacing: 1px; background: var(--accent); border-color: var(--accent); margin: 0;">OYNANIŞ & KURALLAR 📖</button>
       <div class="tz-label" style="font-size: 16px; font-weight: 700; color: var(--accent2); letter-spacing: 2px; text-align: center;">ROLÜNÜ SEÇ (İSTEĞE BAĞLI)</div>
-      <div id="lobbyRoleList" class="scroll" style="display: flex; flex-direction: column; gap: 10px; max-height: 400px; overflow-y: auto; padding-right: 5px;">
+      <div id="lobbyRoleList" class="scroll" style="display: flex; flex-direction: column; gap: 10px; max-height: 350px; overflow-y: auto; padding-right: 5px;">
         <!-- Roles will be dynamically populated here -->
       </div>
     </div>
@@ -486,9 +488,13 @@ body::before {
 <div id="gameScreen" class="screen hidden">
   
   <!-- HUD -->
-  <div id="hud">
+  <div id="hud" style="display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; justify-content: space-between;">
     <div id="hudMsg">Bağlantı kuruluyor...</div>
     <div id="turnIndicator">—</div>
+    <div id="hudActions" style="display: flex; gap: 10px; align-items: center; justify-content: flex-end;">
+      <button class="btn btn-ghost" id="gameRulesBtn" style="padding: 4px 12px; font-size: 12px; margin: 0; border-color: var(--border);">KURALLAR 📖</button>
+      <button class="btn btn-danger" id="backToLobbyBtn" style="padding: 4px 12px; font-size: 12px; margin: 0; background: var(--red-card); border-color: var(--red-card);">LOBİYE DÖN ↩</button>
+    </div>
   </div>
 
   <!-- EVACUATION BANNER -->
@@ -574,6 +580,17 @@ body::before {
     <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); margin-top: 8px;">
       Süre: <span id="cntSec">10</span>s
     </div>
+  </div>
+</div>
+
+<!-- ── RULES MODAL ── -->
+<div id="rulesModal" class="overlay hidden">
+  <div class="modal-content" style="max-width: 650px; width: 90%; max-height: 80vh; display: flex; flex-direction: column; padding: 25px; border-radius: 12px; background: var(--surface2); border: 1px solid var(--border);">
+    <div id="rulesTitle" style="font-family: var(--font-head); font-size: 24px; color: var(--accent); letter-spacing: 2px; border-bottom: 1px solid var(--border); padding-bottom: 10px; text-align: center; margin-bottom: 15px;">📖 OYNANIŞ VE KURALLAR</div>
+    <div id="rulesContent" class="scroll" style="flex: 1; overflow-y: auto; text-align: left; font-size: 13px; line-height: 1.6; color: var(--text); padding-right: 10px; margin-bottom: 20px; font-family: var(--font-ui);">
+      <!-- Rules text will be populated here -->
+    </div>
+    <button class="btn btn-primary" id="closeRulesBtn" style="width: 100%; font-weight: 700; font-size: 14px; margin: 0;">ANLADIM, KAPAT</button>
   </div>
 </div>
 

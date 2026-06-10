@@ -585,3 +585,100 @@ if ($("playAgainBtn")) {
         socket.emit("playAgain");
     });
 }
+
+const RULES_HTML = `
+  <h4 style="color: var(--accent); margin-bottom: 8px;">🎯 1. OYUNUN AMACI VE BAŞLANGIÇ</h4>
+  <ul style="margin-bottom: 15px; padding-left: 20px;">
+    <li style="margin-bottom: 6px;"><strong>Amaç:</strong> Merkez masaya açılan "Aktif Hedefleri" eldeki kartlarla çözerek 51 puana ulaşan ilk oyuncu olmak.</li>
+    <li style="margin-bottom: 6px;"><strong>Başlangıç:</strong> Her oyuncuya merkez desteden 5 adet kart dağıtılır ve herkesin tur enerjisi 3⚡ olarak eşitlenir.</li>
+  </ul>
+  
+  <h4 style="color: var(--accent); margin-bottom: 8px;">🎲 2. SIRA SENDEDİR: TURUNU NASIL OYNARSIN?</h4>
+  <p style="margin-bottom: 10px;"><strong>ANA KURAL:</strong> Sırası gelen oyuncu pas geçemez. Sıranızı bir sonraki oyuncuya devredebilmeniz için o tur mutlaka EN AZ 1 ENERJİ harcamış olmanız gerekir!</p>
+  <p style="margin-bottom: 10px;">Sıra size geldiğinde elinizdeki kaynaklarla şu 3 hamleden birini yaparsınız:</p>
+  <ol style="margin-bottom: 15px; padding-left: 20px;">
+    <li style="margin-bottom: 8px;"><strong>GÜÇ KARTI OYNAMAK:</strong> Elinizdeki renkli kartı ortadaki Gündem Havuzuna atarsınız.
+      <ul style="margin-top: 4px; padding-left: 20px;">
+        <li style="margin-bottom: 4px;"><strong>RENK UYUMU:</strong> Attığınız kartın rengi masadaki hedef kartıyla AYNIYSA, kartınız otomatik olarak +1 GÜÇ kazanır!</li>
+      </ul>
+    </li>
+    <li style="margin-bottom: 8px;"><strong>AKSİYON KARTI OYNAMAK:</strong> Elinizdeki siyah kartları (Sabotaj, Yenileme, Hedef Değiştirme) üzerinde yazan enerji bedelini ödeyerek oynarsınız.</li>
+    <li style="margin-bottom: 8px;"><strong>MANEVRA YAPMAK (Zorunlu Pas):</strong> Elinizde oynayacak kart yoksa veya elinizi saklamak istiyorsanız; 1 enerji harcar, elinizden 1 kartı kapalı olarak çöpe atar ve desteden 1 yeni kart çekersiniz.</li>
+  </ol>
+  <p style="margin-bottom: 15px;"><strong>HEDEF NASIL ÇÖZÜLÜR?:</strong> Havuzda biriken kartların toplam gücü, hedef kartının baraj değerine ulaştığı veya geçtiği an hedef çözülür. O barajı geçen SON KARTI atan oyuncu, hedef kartını ve üzerindeki puanı kazanır!</p>
+
+  <h4 style="color: var(--accent); margin-bottom: 8px;">⚡ 3. SIRA SENDE DEĞİLKEN NELER YAPABİLİRSİN? (REAKSİYONLAR)</h4>
+  <p style="margin-bottom: 10px;">Oyun sıra tabanlı akan bir yapıya sahip olsa da, rakiplerin turlarına anlık olarak müdahale edebilirsiniz:</p>
+  <ul style="margin-bottom: 15px; padding-left: 20px;">
+    <li style="margin-bottom: 6px;"><strong>İPTAL (CANCEL) DÜELLOSU:</strong> Bir rakip kart oynadığında, sıranız olmasa bile elinizden anlık olarak "CANCEL" kartı fırlatabilirsiniz. Attığınız CANCEL başarılı olursa rakibin hamlesi iptal edilir ve çöpe gider.
+      <ul style="margin-top: 4px; padding-left: 20px;">
+        <li style="margin-bottom: 4px;"><strong>REAKSİYON PENALTISI:</strong> Sıranız dışından bu düelloya girip kaybederseniz, bir sonraki kendi turunuza -1 Enerji Penaltısıyla (2 enerji ile) başlarsınız! Kendi oynadığı kartı savunan aktif oyuncu penaltı almaz.</li>
+      </ul>
+    </li>
+  </ul>
+
+  <h4 style="color: var(--accent); margin-bottom: 8px;">👥 4. ASİMETRİK MODELLER (ROL YETENEKLERİ)</h4>
+  <p style="margin-bottom: 10px;">Oyunda her oyuncuya başlangıçta asimetrik birer avantaj tanımlanır:</p>
+  <ul style="margin-bottom: 15px; padding-left: 20px;">
+    <li style="margin-bottom: 6px;"><strong>🔴 MODEL 1:</strong> Siyah aksiyon kartlarını oynarken her tur ilk kartta 1 enerji indirimi alır. Ancak tur sonunda rutin kart çekebilmesi için sistem onun 1 enerjisini düşer. Enerjisi 0 ise tur sonu kart çekemez. Yenileme kartı oynarsa -1 puan kaybeder.</li>
+    <li style="margin-bottom: 6px;"><strong>🔴 MODEL 2:</strong> Birisi CANCEL attığında araya girip o kartı mühürleyebilir, mühürlerse CANCEL atan oyuncunun elinden rastgele 1 kart çöpe gider. Mavi renkli hedefleri başkası çözerse -2 puan kaybeder (X ve Y hariç).</li>
+    <li style="margin-bottom: 6px;"><strong>🔵 MODEL 3:</strong> Yeni hedef açılmadan önce gizlice sıradaki karta bakabilir ve en fazla 2 kez hedef destesini karıştırıp yeni kart açtırabilir. Kendi turu boyunca ortadaki havuza hiç kart oynamazsa pasiflikten -1 puan kaybeder.</li>
+    <li style="margin-bottom: 6px;"><strong>🔵 MODEL 4:</strong> Rakiplerin sırasındayken çöpe giden herhangi bir kartı 1 enerji karşılığında yerden kendi eline alabilir (Turda en fazla 1 kez). Tur sonu rutin kart çekimi yapamaz. Kırmızı hedef aktifken uyumsuz renk oynarsa gücü 1 azalır.</li>
+    <li style="margin-bottom: 6px;"><strong>🟡 MODEL 5:</strong> Bir rakip hedef çözüp puan kazandığı an elinden kart fırlatarak hedefi çözen oyuncunun kazandığı puanı fırlattığı kartın maliyeti kadar düşürür. Kırmızı hedefte güç kartı oynarsa gücü 1 azalır.</li>
+    <li style="margin-bottom: 6px;"><strong>🟡 MODEL 6:</strong> Oynadığı 1 değerindeki kartlar, hedef rengine bakılmaksızın otomatik +1 güç bonusu alır. Ancak bu kartları oynamak ona +1 fazla enerjiye (Maliyet: 2) mal olur. Rakip kırmızı hedef çözerse anında -2 puan kaybeder.</li>
+  </ul>
+
+  <h4 style="color: var(--accent); margin-bottom: 8px;">🚨 5. TASFİYE SAFHASI (SON ANLAR)</h4>
+  <p style="margin-bottom: 10px;">Desteler azaldığında oyun durmaz, acil Tasfiye Protokolü devreye girer:</p>
+  <ul style="margin-bottom: 15px; padding-left: 20px;">
+    <li style="margin-bottom: 6px;">Çekilecek kart olduğu sürece, hedef çözülene kadar kart çekme işlemi normal kurallarla devam eder.</li>
+    <li style="margin-bottom: 6px;">Oyuncular elindeki kartlar tamamen bitene kadar ortadaki mevcut hedefi çözmek ve puan toplamak için oynamaya devam ederler.</li>
+    <li style="margin-bottom: 6px;">Hamlesi kalmayanlar zorunlu manevrayla elindeki kartları kapalı olarak çöpe fırlatır.</li>
+    <li style="margin-bottom: 6px;">Eğer hedef kartlarının bitmesi sebebiyle bu moda girilmişse, o son kart çözüldüğü an sistem tüm ıskartayı toplar, karıp desteleri sıfırdan kurar ve oyun otomatik olarak yeniden başlar.</li>
+  </ul>
+`;
+
+function openRulesModal() {
+    if ($("rulesContent")) $("rulesContent").innerHTML = RULES_HTML;
+    if ($("rulesModal")) $("rulesModal").classList.remove("hidden");
+}
+
+function closeRulesModal() {
+    if ($("rulesModal")) $("rulesModal").classList.add("hidden");
+}
+
+// Bind events (Use event delegation or conditional check since elements are statically in HTML)
+document.addEventListener("DOMContentLoaded", () => {
+    if ($("lobbyRulesBtn")) $("lobbyRulesBtn").addEventListener("click", openRulesModal);
+    if ($("gameRulesBtn")) $("gameRulesBtn").addEventListener("click", openRulesModal);
+    if ($("closeRulesBtn")) $("closeRulesBtn").addEventListener("click", closeRulesModal);
+    if ($("exitBtn")) {
+        $("exitBtn").addEventListener("click", () => {
+            window.location.reload();
+        });
+    }
+    if ($("backToLobbyBtn")) {
+        $("backToLobbyBtn").addEventListener("click", () => {
+            if (confirm("Lobiye dönmek istediğinizden emin misiniz?")) {
+                socket.emit("returnToLobby");
+            }
+        });
+    }
+});
+
+// Also bind directly in case DOMContentLoaded has already fired
+if ($("lobbyRulesBtn")) $("lobbyRulesBtn").addEventListener("click", openRulesModal);
+if ($("gameRulesBtn")) $("gameRulesBtn").addEventListener("click", openRulesModal);
+if ($("closeRulesBtn")) $("closeRulesBtn").addEventListener("click", closeRulesModal);
+if ($("exitBtn")) {
+    $("exitBtn").addEventListener("click", () => {
+        window.location.reload();
+    });
+}
+if ($("backToLobbyBtn")) {
+    $("backToLobbyBtn").addEventListener("click", () => {
+        if (confirm("Lobiye dönmek istediğinizden emin misiniz?")) {
+            socket.emit("returnToLobby");
+        }
+    });
+}
