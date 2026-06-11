@@ -1,6 +1,8 @@
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
+const fs = require("fs");
+const path = require("path");
 
 const app = express();
 const server = http.createServer(app);
@@ -10,6 +12,46 @@ app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
 const MAX_PLAYERS = 6;
+const LOG_FILE = path.join(__dirname, "game_analysis.log");
+
+function getTsiTimestamp() {
+    const date = new Date();
+    const offsetDate = new Date(date.getTime() + (3 * 60 * 60 * 1000));
+    return offsetDate.toISOString().replace("Z", "+03:00");
+}
+
+function logAction(player, action, details, category = "ACTION") {
+    const timestamp = getTsiTimestamp();
+    let playerStr = "SYSTEM";
+    let energyStr = "0";
+    if (player) {
+        const roleStr = player.role || "NO_ROLE";
+        playerStr = `${player.name} (Role: ${roleStr}, ID: ${player.id})`;
+        energyStr = player.energy;
+    }
+    
+    let logLine;
+    if (category === "SYSTEM" && action === "LEFT_GAME_TO_LOBBY") {
+        logLine = `[${timestamp}] SYSTEM | Player: ${playerStr} | Action: LEFT_GAME_TO_LOBBY | ${details}`;
+    } else {
+        logLine = `[${timestamp}] ${category} | Player: ${playerStr} | Energy: ${energyStr} | Action: ${action} | ${details}`;
+    }
+    
+    fs.appendFile(LOG_FILE, logLine + "\n", (err) => {
+        if (err) console.error("Error writing log to file:", err);
+    });
+
+    io.to("admins").emit("newLog", logLine);
+}
+
+function logSessionStart() {
+    const timestamp = getTsiTimestamp();
+    const header = `\n======================================================================\n[DURUM] YENİ OYUN OTURUMU BAŞLADI | Tarih: ${timestamp}\n======================================================================\n`;
+    fs.appendFile(LOG_FILE, header, (err) => {
+        if (err) console.error("Error writing session start log to file:", err);
+    });
+    io.to("admins").emit("newLog", `SYSTEM | YENİ OYUN OTURUMU BAŞLADI | Tarih: ${timestamp}`);
+}
 const COLORS = ["RED", "BLUE", "YELLOW"];
 const ROLES = ["ROLE_1", "ROLE_2", "ROLE_3", "ROLE_4", "ROLE_5", "ROLE_6"];
 const REACTION_TIMEOUT_MS = 10000;
@@ -201,6 +243,15 @@ function broadcastState() {
         io.to(p.id).emit("privateState", { hand: p.hand });
     });
     io.emit("stateUpdate", getPublicState());
+    
+    io.to("admins").emit("adminStateUpdate", {
+        publicState: getPublicState(),
+        fullHands: gameState.players.map(p => ({
+            id: p.id,
+            name: p.name,
+            hand: p.hand
+        }))
+    });
 }
 
 // ─────────────────────────────────────────────
@@ -335,8 +386,9 @@ function resolveTarget() {
 
     const target = gameState.currentTarget;
     const role5 = findRole("ROLE_5");
+    const isSpecialTarget = target && (target.type === "SPECIAL_X" || target.type === "SPECIAL_Y");
 
-    if (role5 && role5.id !== winner.id && gameState.role5UsesTotal < 3 && role5.hand.length > 0) {
+    if (role5 && role5.id !== winner.id && gameState.role5UsesTotal < 3 && role5.hand.length > 0 && !isSpecialTarget) {
         startReaction("ROLE5_STEAL", role5.id, (decision, rx) => {
             const penalty = (decision === "throw" && rx) ? (rx.penalty || 0) : 0;
             continueResolveTarget(target, winner, penalty);
@@ -347,7 +399,12 @@ function resolveTarget() {
 }
 
 function continueResolveTarget(target, winner, penalty = 0) {
+    const curAgendaPower = agendaPower();
+    
     if (target.type === "SPECIAL_X") {
+        const rewardText = `Silently chosen target loses 10 score`;
+        logAction(winner, "TARGET_RESOLVED", `Solved Target: SPECIAL_X (Threshold: ${target.threshold}) | Winner: ${winner.name} | Agenda Power: ${curAgendaPower}/${target.threshold} | Effect: ${rewardText} | Penalty: ${penalty}`);
+        
         const rivals = gameState.players.filter(p => p.id !== winner.id);
         if (rivals.length > 0) {
             startReaction("SPECIAL_X_CHOOSE", winner.id, (victimId) => {
@@ -366,6 +423,7 @@ function continueResolveTarget(target, winner, penalty = 0) {
         }
     } else if (target.type === "SPECIAL_Y") {
         let reward = Math.max(0, 5 - penalty);
+        logAction(winner, "TARGET_RESOLVED", `Solved Target: SPECIAL_Y (Threshold: ${target.threshold}) | Winner: ${winner.name} | Agenda Power: ${curAgendaPower}/${target.threshold} | Base Reward: 5 | Penalty: ${penalty} | Final Gained: ${reward} (Others lose 5 score)`);
         winner.score += reward;
         gameState.players.forEach(p => { if (p.id !== winner.id) p.score = Math.max(0, p.score - 5); });
         gameState.hudMessage = `${winner.name} ÖZEL-Y: +${reward} (Rol 5 Cezası: -${penalty}), diğerleri -5!`;
@@ -382,13 +440,15 @@ function continueResolveTarget(target, winner, penalty = 0) {
                 hasSynergy = true;
             }
         }
-        if (hasSynergy) {
-            reward += 2; // Sinerji Bonusu
-        }
-        let finalReward = Math.max(0, reward - penalty);
-        winner.score += finalReward;
+        
+        let finalReward = reward + (hasSynergy ? 2 : 0);
+        let finalScoreChange = Math.max(0, finalReward - penalty);
+        
+        logAction(winner, "TARGET_RESOLVED", `Solved Target: ${target.color} ${target.type} (Threshold: ${target.threshold}) | Winner: ${winner.name} | Agenda Power: ${curAgendaPower}/${target.threshold} | Base Reward: ${reward}${hasSynergy ? ' (+2 Synergy Bonus)' : ''} | Penalty: ${penalty} | Final Gained: +${finalScoreChange}`);
+        
+        winner.score += finalScoreChange;
         if (penalty > 0) {
-            gameState.hudMessage = `${winner.name} hedefi çözdü! +${finalReward} (Rol 5 Cezası: -${penalty})${hasSynergy ? ' (SİNERJİ BONUSU!)' : ''}`;
+            gameState.hudMessage = `${winner.name} hedefi çözdü! +${finalScoreChange} (Rol 5 Cezası: -${penalty})${hasSynergy ? ' (SİNERJİ BONUSU!)' : ''}`;
         } else {
             gameState.hudMessage = `${winner.name} hedefi çözdü! ${hasSynergy ? '(SİNERJİ BONUSU!) ' : ''}+${reward}`;
         }
@@ -460,11 +520,21 @@ function checkDeckExhaustion() {
 function startEvacuation(cause = null) {
     gameState.evacuationMode = true;
     gameState.evacuationTriggerCause = cause;
+    
+    let causeStr = "Bilinmeyen Neden";
+    if (cause === "TARGET_DECK") {
+        causeStr = "Gündem/Hedef Destesi Bitti";
+    } else if (cause === "CENTER_DECK") {
+        causeStr = "Merkez Oyuncu Destesi Bitti";
+    }
+    logAction(null, "EVACUATION", `!!! TASFİYE PROTOKOLÜ DEVREYE GİRDİ !!! | Neden: ${causeStr}`);
+
     gameState.hudMessage = "TAHLİYE SAFHASINA GEÇİLDİ! Sırayla kartlarınızı oynayarak hedefi çözmeye çalışın veya manevra yapın.";
     broadcastState();
 }
 
 function finalizeEvacuation() {
+    logSessionStart();
     gameState.currentTarget = null;
     gameState.agendaPile = [];
     const all = [...gameState.centerDeck, ...gameState.discardPile];
@@ -552,6 +622,7 @@ function beginTurn() {
         player.energy = 3;
     }
 
+    logAction(player, "TURN_CHANGE", `Turn started for ${player.name} | Score: ${player.score}`);
 
     gameState.hudMessage = `${player.name} sırası başladı`;
     broadcastState();
@@ -762,6 +833,8 @@ function playCounterCancelCard(candidate) {
         return;
     }
 
+    logAction(candidate, "CANCEL_REACTION", `Counter Played | ${candidate.name} played CANCEL in response to last Cancel (Chain: ${cancelCount + 1})`);
+
     candidate.hand.splice(cardIndex, 1);
 
     const activePlayer = currentPlayer();
@@ -783,6 +856,12 @@ function playCounterCancelCard(candidate) {
 
 function resolveCancelDuelResult() {
     const isCancelled = (cancelCount % 2 === 1);
+    const penalizedPlayers = gameState.players.filter(p => p.cancelPenalty).map(p => p.name);
+    const outcomeStr = isCancelled 
+        ? `${currentPlayer().name}'in oynadığı kart İPTAL edildi!`
+        : `İptal zinciri sonuçsuz kaldı! Kart korundu.`;
+    
+    logAction(null, "CANCEL_REACTION", `Duel Ended | Result: ${outcomeStr} | Chain length: ${cancelCount} | Penalized players next turn (Energy -1): ${penalizedPlayers.join(", ") || "None"}`);
 
     if (isCancelled) {
         if (gameState.lastPlayedCard) {
@@ -818,6 +897,7 @@ function checkVictory() {
 }
 
 function startGame() {
+    logSessionStart();
     gameState.started = true;
     gameState.evacuationMode = false;
     gameState.evacuationTriggerCause = null;
@@ -866,6 +946,49 @@ io.on("connection", (socket) => {
     // Emit current state immediately to the connecting client
     socket.emit("stateUpdate", getPublicState());
 
+    socket.on("registerAdmin", () => {
+        socket.join("admins");
+        fs.readFile(LOG_FILE, "utf8", (err, logData) => {
+            let recentLogs = [];
+            if (!err && logData) {
+                const lines = logData.trim().split("\n");
+                recentLogs = lines.slice(-20);
+            }
+            socket.emit("adminStateUpdate", {
+                publicState: getPublicState(),
+                fullHands: gameState.players.map(p => ({
+                    id: p.id,
+                    name: p.name,
+                    hand: p.hand
+                })),
+                recentLogs: recentLogs
+            });
+        });
+    });
+
+    socket.on("downloadLogFile", () => {
+        fs.readFile(LOG_FILE, "utf8", (err, data) => {
+            if (err) {
+                socket.emit("downloadLogFileResponse", { error: "Log dosyası okunamadı veya bulunamadı." });
+            } else {
+                socket.emit("downloadLogFileResponse", { content: data });
+            }
+        });
+    });
+
+    socket.on("resetLogFile", () => {
+        const timestamp = getTsiTimestamp();
+        const header = `\n======================================================================\n[DURUM] LOG DOSYASI ADMİN TARAFINDAN SIFIRLANDI | Tarih: ${timestamp}\n======================================================================\n`;
+        fs.writeFile(LOG_FILE, header, (err) => {
+            if (err) {
+                console.error("Error resetting log file:", err);
+                socket.emit("resetLogFileResponse", { error: "Log dosyası sıfırlanamadı." });
+            } else {
+                io.to("admins").emit("logResetComplete", header);
+            }
+        });
+    });
+
     socket.on("join", (name) => {
         if (gameState.started) return;
         if (gameState.players.length >= MAX_PLAYERS) return;
@@ -900,6 +1023,16 @@ io.on("connection", (socket) => {
     socket.on("returnToLobby", () => {
         if (!gameState.started) return;
 
+        const triggerPlayer = findPlayer(socket.id);
+        if (triggerPlayer) {
+            logAction(triggerPlayer, "LEFT_GAME_TO_LOBBY", "Reason: Player Left", "SYSTEM");
+        }
+        gameState.players.forEach(p => {
+            if (p.id !== socket.id) {
+                logAction(p, "LEFT_GAME_TO_LOBBY", "Reason: Game Ended", "SYSTEM");
+            }
+        });
+
         gameState.started = false;
         gameState.evacuationMode = false;
         gameState.evacuationTriggerCause = null;
@@ -924,6 +1057,13 @@ io.on("connection", (socket) => {
 
         gameState.hudMessage = "Oyun sonlandırıldı. Lobiye dönüldü.";
         broadcastState();
+    });
+
+    socket.on("leaveGame", () => {
+        const player = findPlayer(socket.id);
+        if (player && gameState.started) {
+            logAction(player, "LEFT_GAME_TO_LOBBY", "Reason: Player Left", "SYSTEM");
+        }
     });
 
 
@@ -999,6 +1139,8 @@ io.on("connection", (socket) => {
 
         if (player.energy < effectiveCost) return;
 
+        logAction(player, "PLAY_CARD", `Card: ${card.type} (Cost: ${card.cost}${card.type === 'POWER' ? ', Color: ' + card.color + ', Value: ' + card.value : ''})`);
+
         player.energy -= effectiveCost;
         if (effectiveCost >= 1) {
             player.actedThisTurn = true;
@@ -1026,6 +1168,8 @@ io.on("connection", (socket) => {
         if (player.id === activePlayer.id) return;
         if (gameState.lastPlayedCard.playerId !== activePlayer.id) return;
 
+        logAction(player, "CANCEL_REACTION", `Duel Started | Initiator: ${player.name} played CANCEL targeting card [${lastCard.type}] played by ${activePlayer.name}`);
+
         player.hand.splice(cardIndex, 1);
         player.cancelPenalty = true;
 
@@ -1040,6 +1184,7 @@ io.on("connection", (socket) => {
             gameState.hudMessage = `ROLE_2 (${role2.name}) CANCEL'a müdahale edebilir.`;
             startReaction("ROLE2_CANCEL", role2.id, (decision) => {
                 if (decision === "accept") {
+                    logAction(role2, "CANCEL_REACTION", `Role 2 Sealed Cancel | ${role2.name} sealed cancel played by ${player.name} (Role 2 gets cancel penalty)`);
                     role2.cancelPenalty = true;
                     if (player.hand.length > 0) {
                         const ri = Math.floor(Math.random() * player.hand.length);
@@ -1067,6 +1212,8 @@ io.on("connection", (socket) => {
         const player = currentPlayer();
         const card = player.hand[cardIndex];
         if (!card) return;
+
+        logAction(player, "MANEUVER", `Card Discarded: ${card.type} (Cost: ${card.cost}${card.type === 'POWER' ? ', Color: ' + card.color + ', Value: ' + card.value : ''})`);
 
         player.energy--;
         player.actedThisTurn = true;
@@ -1097,8 +1244,10 @@ io.on("connection", (socket) => {
         const canPlay = player.hand.some(c => c.cost <= player.energy);
         if (!canPlay) {
             if (player.energy >= 1 && player.hand.length > 0) {
+                const card = player.hand[0];
+                logAction(player, "MANEUVER", `Forced Maneuver | Card Discarded: ${card.type} (Cost: ${card.cost}${card.type === 'POWER' ? ', Color: ' + card.color + ', Value: ' + card.value : ''})`);
                 player.energy--;
-                const card = player.hand.splice(0, 1)[0];
+                player.hand.splice(0, 1);
                 gameState.discardPile.push(card);
                 triggerRole4Reaction(card);
                 drawCard(player);
@@ -1160,6 +1309,10 @@ io.on("connection", (socket) => {
     socket.on("disconnect", () => {
         const idx = gameState.players.findIndex(p => p.id === socket.id);
         if (idx !== -1) {
+            const player = gameState.players[idx];
+            if (gameState.started) {
+                logAction(player, "LEFT_GAME_TO_LOBBY", "Reason: Disconnected", "SYSTEM");
+            }
             gameState.players.splice(idx, 1);
             if (gameState.activeReaction && gameState.activeReaction.forSocketId === socket.id) resolveReaction("pass");
             if (gameState.players.length < 2) {
