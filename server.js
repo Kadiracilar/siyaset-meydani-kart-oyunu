@@ -29,14 +29,14 @@ function logAction(player, action, details, category = "ACTION") {
         playerStr = `${player.name} (Role: ${roleStr}, ID: ${player.id})`;
         energyStr = player.energy;
     }
-    
+
     let logLine;
     if (category === "SYSTEM" && action === "LEFT_GAME_TO_LOBBY") {
         logLine = `[${timestamp}] SYSTEM | Player: ${playerStr} | Action: LEFT_GAME_TO_LOBBY | ${details}`;
     } else {
         logLine = `[${timestamp}] ${category} | Player: ${playerStr} | Energy: ${energyStr} | Action: ${action} | ${details}`;
     }
-    
+
     fs.appendFile(LOG_FILE, logLine + "\n", (err) => {
         if (err) console.error("Error writing log to file:", err);
     });
@@ -109,7 +109,7 @@ function findRole(role) {
 function canPlayAnyCard(player) {
     return player.hand.some(card => {
         if (card.type === "CANCEL") return false;
-        
+
         if (card.type === "REDUCE") {
             if (agendaPower() <= 0) return false;
             const agenda = gameState.agendaPile;
@@ -117,7 +117,7 @@ function canPlayAnyCard(player) {
                 return false;
             }
         }
-        
+
         let effectiveCost = card.cost;
         if (player.role === "ROLE_1" && card.type !== "POWER" && !player.usedBlackDiscount) {
             effectiveCost = Math.max(0, effectiveCost - 1);
@@ -125,7 +125,7 @@ function canPlayAnyCard(player) {
         if (player.role === "ROLE_6" && card.type === "POWER" && card.value === 1) {
             effectiveCost += 1;
         }
-        
+
         return player.energy >= effectiveCost;
     });
 }
@@ -310,7 +310,7 @@ function broadcastState() {
         io.to(p.id).emit("privateState", { hand: p.hand });
     });
     io.emit("stateUpdate", getPublicState());
-    
+
     io.to("admins").emit("adminStateUpdate", {
         publicState: getPublicState(),
         fullHands: gameState.players.map(p => ({
@@ -468,11 +468,11 @@ function resolveTarget() {
 
 function continueResolveTarget(target, winner, penalty = 0) {
     const curAgendaPower = agendaPower();
-    
+
     if (target.type === "SPECIAL_X") {
         const rewardText = `Silently chosen target loses 10 score`;
         logAction(winner, "TARGET_RESOLVED", `Solved Target: SPECIAL_X (Threshold: ${target.threshold}) | Winner: ${winner.name} | Agenda Power: ${curAgendaPower}/${target.threshold} | Effect: ${rewardText} | Penalty: ${penalty}`);
-        
+
         const rivals = gameState.players.filter(p => p.id !== winner.id);
         if (rivals.length > 0) {
             startReaction("SPECIAL_X_CHOOSE", winner.id, (victimId) => {
@@ -508,12 +508,12 @@ function continueResolveTarget(target, winner, penalty = 0) {
                 hasSynergy = true;
             }
         }
-        
+
         let finalReward = reward + (hasSynergy ? 2 : 0);
         let finalScoreChange = Math.max(0, finalReward - penalty);
-        
+
         logAction(winner, "TARGET_RESOLVED", `Solved Target: ${target.color} ${target.type} (Threshold: ${target.threshold}) | Winner: ${winner.name} | Agenda Power: ${curAgendaPower}/${target.threshold} | Base Reward: ${reward}${hasSynergy ? ' (+2 Synergy Bonus)' : ''} | Penalty: ${penalty} | Final Gained: +${finalScoreChange}`);
-        
+
         winner.score += finalScoreChange;
         if (penalty > 0) {
             gameState.hudMessage = `${winner.name} hedefi çözdü! +${finalScoreChange} (Rol 5 Cezası: -${penalty})${hasSynergy ? ' (SİNERJİ BONUSU!)' : ''}`;
@@ -588,7 +588,7 @@ function checkDeckExhaustion() {
 function startEvacuation(cause = null) {
     gameState.evacuationMode = true;
     gameState.evacuationTriggerCause = cause;
-    
+
     let causeStr = "Bilinmeyen Neden";
     if (cause === "TARGET_DECK") {
         causeStr = "Gündem/Hedef Destesi Bitti";
@@ -840,7 +840,7 @@ function executeCardPlayDirect(player, card) {
         gameState.discardPile.push(card);
         player.hand.forEach(c => gameState.discardPile.push(c));
         player.hand = [];
-        drawCards(player, 5);
+        drawCards(player, 4);
         triggerRole4Reaction(card);
         player.skipDraw = true;
 
@@ -925,10 +925,10 @@ function playCounterCancelCard(candidate) {
 function resolveCancelDuelResult() {
     const isCancelled = (cancelCount % 2 === 1);
     const penalizedPlayers = gameState.players.filter(p => p.cancelPenalty).map(p => p.name);
-    const outcomeStr = isCancelled 
+    const outcomeStr = isCancelled
         ? `${currentPlayer().name}'in oynadığı kart İPTAL edildi!`
         : `İptal zinciri sonuçsuz kaldı! Kart korundu.`;
-    
+
     logAction(null, "CANCEL_REACTION", `Duel Ended | Result: ${outcomeStr} | Chain length: ${cancelCount} | Penalized players next turn (Energy -1): ${penalizedPlayers.join(", ") || "None"}`);
 
     if (isCancelled) {
@@ -1369,7 +1369,7 @@ io.on("connection", (socket) => {
                 role5.hand.splice(idx, 1);
                 gameState.discardPile.push(card);
                 gameState.role5UsesTotal++;
-                
+
                 resolveReaction(decision);
                 triggerRole4Reaction(card);
                 return;

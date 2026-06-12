@@ -28,7 +28,7 @@ const CARD_INFO = {
     CANCEL: { label: "İPTAL (NOPE)", desc: "Anlık oynanır. Rakibin kartını iptal eder. Atan gelecek el -1 enerji penaltısı alır." },
     REDUCE: { label: "AZALT (SABOTAJ)", desc: "Gündem havuzundaki son kartın gücünü sıfırlar (kartı çöpe atmaz)." },
     CHANGE_TARGET: { label: "HEDEF DEĞİŞTİR", desc: "Mevcut hedefi iptal edip desteye karıştırır, yeni hedef açar." },
-    REFRESH: { label: "YENİLE (FONLAMA)", desc: "Elinizdeki tüm kartları çöpe atıp 5 yeni kart çekersiniz." },
+    REFRESH: { label: "YENİLE (FONLAMA)", desc: "Elinizdeki tüm kartları çöpe atıp 4 yeni kart çekersiniz." },
 };
 
 const ROLE_INFO = {
