@@ -171,6 +171,47 @@ function clearAutoEndTimeout() {
     }
 }
 
+let checkingStalemate = false;
+
+function checkEvacuationStalemate() {
+    if (checkingStalemate) return;
+    if (!gameState.evacuationMode || !gameState.currentTarget) return;
+    if (gameState.centerDeck.length > 0) return;
+
+    let totalMaxPowerInHands = 0;
+    gameState.players.forEach(p => {
+        p.hand.forEach(card => {
+            if (card.type === "POWER") {
+                let power = card.value;
+                if (gameState.currentTarget.color && card.color === gameState.currentTarget.color) {
+                    power++;
+                }
+                if (p.role === "ROLE_6" && card.value === 1) {
+                    power++;
+                }
+                totalMaxPowerInHands += power;
+            }
+        });
+    });
+
+    if (agendaPower() + totalMaxPowerInHands < gameState.currentTarget.threshold) {
+        checkingStalemate = true;
+
+        logAction(null, "EVACUATION_STALEMATE", `Stalemate detected! Current Agenda Power: ${agendaPower()} + Total Hand Max Power: ${totalMaxPowerInHands} = ${agendaPower() + totalMaxPowerInHands} < Threshold: ${gameState.currentTarget.threshold}. Discarding hands and finalizing evacuation.`);
+
+        gameState.hudMessage = "Çözüm imkansız: Kartlar hedef barajına yetmiyor! Eldeki tüm kartlar atılıyor ve tasfiye sonlandırılıyor.";
+
+        // Discard all cards from players' hands
+        gameState.players.forEach(p => {
+            p.hand.forEach(c => gameState.discardPile.push(c));
+            p.hand = [];
+        });
+
+        finalizeEvacuation();
+        checkingStalemate = false;
+    }
+}
+
 
 
 // ─────────────────────────────────────────────
@@ -306,6 +347,8 @@ function getPublicState() {
 }
 
 function broadcastState() {
+    checkEvacuationStalemate();
+
     gameState.players.forEach(p => {
         io.to(p.id).emit("privateState", { hand: p.hand });
     });
