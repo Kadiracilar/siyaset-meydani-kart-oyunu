@@ -106,6 +106,73 @@ function findRole(role) {
     return gameState.players.find(p => p.role === role);
 }
 
+function canPlayAnyCard(player) {
+    return player.hand.some(card => {
+        if (card.type === "CANCEL") return false;
+        
+        if (card.type === "REDUCE") {
+            if (agendaPower() <= 0) return false;
+            const agenda = gameState.agendaPile;
+            if (agenda && agenda.length > 0 && agenda[agenda.length - 1].owner === player.id) {
+                return false;
+            }
+        }
+        
+        let effectiveCost = card.cost;
+        if (player.role === "ROLE_1" && card.type !== "POWER" && !player.usedBlackDiscount) {
+            effectiveCost = Math.max(0, effectiveCost - 1);
+        }
+        if (player.role === "ROLE_6" && card.type === "POWER" && card.value === 1) {
+            effectiveCost += 1;
+        }
+        
+        return player.energy >= effectiveCost;
+    });
+}
+
+let autoEndTimeout = null;
+
+function checkAutoEndTurn(player, immediate = false) {
+    if (!gameState.started || gameState.activeReaction) return;
+    if (!player || player.id !== currentPlayer().id) return;
+
+    if (!canPlayAnyCard(player)) {
+        if (autoEndTimeout) clearTimeout(autoEndTimeout);
+
+        const performEnd = () => {
+            if (!gameState.started || gameState.activeReaction) return;
+            if (player.id !== currentPlayer().id) return;
+            if (canPlayAnyCard(player)) return;
+
+            if (player.role === "ROLE_3") {
+                if (!player.playedToAgendaThisTurn && gameState.role3NoPenaltyCount < 5) {
+                    player.score = Math.max(0, player.score - 1);
+                    gameState.role3NoPenaltyCount++;
+                }
+            }
+            player.usedBlackDiscount = false;
+            drawEndTurn(player);
+            nextPlayer();
+            broadcastState();
+        };
+
+        if (immediate) {
+            performEnd();
+        } else {
+            autoEndTimeout = setTimeout(performEnd, 1500);
+        }
+    }
+}
+
+function clearAutoEndTimeout() {
+    if (autoEndTimeout) {
+        clearTimeout(autoEndTimeout);
+        autoEndTimeout = null;
+    }
+}
+
+
+
 // ─────────────────────────────────────────────
 //  DECK FACTORIES
 // ─────────────────────────────────────────────
@@ -366,6 +433,7 @@ function doRevealTarget() {
     }
 
     gameState.hudMessage = `Yeni hedef: ${gameState.currentTarget.type} (${gameState.currentTarget.color || "ÖZEL"})`;
+    checkAutoEndTurn(currentPlayer(), true);
     broadcastState();
 }
 
@@ -873,6 +941,7 @@ function resolveCancelDuelResult() {
     }
 
     gameState.lastPlayedCard = null;
+    checkAutoEndTurn(currentPlayer(), true);
     broadcastState();
 }
 
@@ -881,6 +950,7 @@ function checkVictory() {
     if (!winner) return;
     gameState.hudMessage = `🏆 ${winner.name} PARTİYİ KAZANDI!`;
     gameState.started = false;
+    clearAutoEndTimeout();
 
     if (!gameState.scoreboard) {
         gameState.scoreboard = [];
@@ -897,6 +967,7 @@ function checkVictory() {
 }
 
 function startGame() {
+    clearAutoEndTimeout();
     logSessionStart();
     gameState.started = true;
     gameState.evacuationMode = false;
@@ -1022,6 +1093,7 @@ io.on("connection", (socket) => {
 
     socket.on("returnToLobby", () => {
         if (!gameState.started) return;
+        clearAutoEndTimeout();
 
         const triggerPlayer = findPlayer(socket.id);
         if (triggerPlayer) {
@@ -1071,6 +1143,7 @@ io.on("connection", (socket) => {
 
 
     socket.on("playAgain", () => {
+        clearAutoEndTimeout();
         gameState.started = false;
         gameState.evacuationMode = false;
         gameState.evacuationTriggerCause = null;
@@ -1148,6 +1221,9 @@ io.on("connection", (socket) => {
         player.hand.splice(cardIndex, 1);
 
         executeCardPlayDirect(player, card);
+
+        // Check if player still has the turn and has no playable cards/energy left
+        checkAutoEndTurn(player);
 
         broadcastState();
     });
@@ -1317,6 +1393,7 @@ io.on("connection", (socket) => {
             if (gameState.activeReaction && gameState.activeReaction.forSocketId === socket.id) resolveReaction("pass");
             if (gameState.players.length < 2) {
                 gameState.started = false;
+                clearAutoEndTimeout();
             } else if (gameState.started) {
                 if (gameState.evacuationMode) {
                     const anyLeft = gameState.players.some(p => p.hand.length > 0);
@@ -1362,6 +1439,7 @@ function triggerRole4Reaction(discardedCard) {
             }
         }
 
+        checkAutoEndTurn(currentPlayer(), true);
         broadcastState();
     }, { cardName: getCardNameTurkish(discardedCard) });
 }
